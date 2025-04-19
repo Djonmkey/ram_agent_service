@@ -11,7 +11,7 @@ from gpt_thread import get_gpt_handler
 # Global Variable for initial prompt.  Used to recover initial prompt when MCP calls are made
 INITIAL_PROMPT = ""
 
-class EventListener(ABC):
+class InputTrigger(ABC):
     """
     Abstract base class for event listeners.
     Any event source (Discord, Slack, Email, etc.) should implement this interface.

@@ -16,11 +16,11 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 # Now imports relative to src should work
-from input_triggers.input_triggers import EventListener # Adjusted import path
+from input_triggers.input_triggers import InputTrigger # Adjusted import path
 from gpt_thread import get_gpt_handler
 
 # Dictionary to store loaded event listeners
-listeners: Dict[str, EventListener] = {}
+listeners: Dict[str, InputTrigger] = {}
 
 def ask_gpt(prompt: str) -> str:
     """
@@ -47,7 +47,7 @@ def ask_gpt_async(prompt: str, callback=None):
     gpt_handler = get_gpt_handler()
     gpt_handler.ask_gpt(prompt, callback)
 
-def discover_event_listeners() -> List[Type[EventListener]]:
+def discover_event_listeners() -> List[Type[InputTrigger]]:
     """
     Discover and load all event listener implementations within the src directory.
 
@@ -96,8 +96,8 @@ def discover_event_listeners() -> List[Type[EventListener]]:
                         # Check if it's a class, a subclass of EventListener,
                         # and not EventListener itself or an abstract class
                         if (isinstance(attr, type) and
-                            issubclass(attr, EventListener) and
-                            attr is not EventListener and
+                            issubclass(attr, InputTrigger) and
+                            attr is not InputTrigger and
                             not getattr(attr, '__abstractmethods__', False)): # Check if it's concrete
                             if attr not in listener_classes: # Avoid duplicates
                                 listener_classes.append(attr)

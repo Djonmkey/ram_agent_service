@@ -8,10 +8,10 @@ from datetime import datetime
 
 # Add parent directory to path to import from main module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from input_triggers.input_triggers import EventListener
+from input_triggers.input_triggers import InputTrigger
 from gpt_thread import get_gpt_handler
 
-class FileWatcherEventListener(EventListener):
+class FileWatcherEventListener(InputTrigger):
     """
     A file-based event listener that watches a directory for new files
     and processes them with GPT.
