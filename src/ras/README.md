@@ -1,4 +1,6 @@
-### Starting the Service (Default)
+## Starting the Service (Default)
+
+This command initializes the RAM Agent Service, loads agent configurations from `config/agent_manifest.json`, and starts listening for input triggers.
 
 ```bash
 # Make sure your Python virtual environment is activated
@@ -6,23 +8,12 @@ source venv/bin/activate  # On macOS/Linux
 # or
 venv\Scripts\activate  # On Windows
 
-# Run the main Python script
-python main.py
-```
+# Run the main Python script from the project root
+python src/ras/main.py
 
-This will:
-1. Start the Python backend
 
 # RAM Agent Service (RAS)
 RAM Agent Service (RAS) is an agentic platform developed by RAM Software for orchestrating and executing autonomous AI agents that integrate deeply with business systems and workflows. RAS supports the Model Context Protocol (MCP) to manage structured inputs and actions, utilizes RAG (Retrieval-Augmented Generation) for dynamic, real-time knowledge access, and enables scalable inference pipelines for context-aware decision-making. Designed for modularity and control, RAS empowers teams to build and manage intelligent agents that adapt to complex environments and deliver high-leverage automation.
-
-## Overview
-
-**RAM Agent Service (RAS)** is an agentic platform developed by **RAM Software** for orchestrating and executing **autonomous AI agents** that integrate seamlessly with business systems and workflows.
-
-Built for **modularity** and **operational control**, RAS empowers teams to deploy intelligent agents capable of adapting to complex environments and delivering high-leverage automation.
-
----
 
 ## ✨ Key Features
 
@@ -86,11 +77,13 @@ source venv/bin/activate
 
 ## Development
 
-The application structure is organized as follows:
+The project structure is organized as follows (relative to the project root):
 
-- `main.py`: Main entry point
-- `../../config/`: Configuration settings
-- `../input_triggers/`: Dynamically loaded code modules for initiating an Agent i.e. Discord, Gmail-Email Received, File Created, etc.
-- `../chat_models/`: Dynamically loaded code modules for communicating with an LLM i.e. OpenAI, Anthropic, Google, etc.
-- `../memory/`: Dynamically loaded code modules for recording interactions and feeding history back to a given model.
-- `../tools_and_data/`: Dynamically loaded code modules for interacting with MCP, OpenAPI or similar servers.
+- `src/ras/main.py`: Main entry point for the service.
+- `config/`: Configuration settings.
+  - `agent_manifest.json`: Defines all available agents and their components.
+- `src/input_triggers/`: Dynamically loaded modules for initiating agents (e.g., Discord, Email, File Watcher).
+- `src/chat_models/`: Dynamically loaded modules for LLM communication (e.g., OpenAI, Anthropic, Google).
+- `src/memory/`: Dynamically loaded modules for agent memory and history management.
+- `src/tools_and_data/`: Dynamically loaded modules for tools, external APIs, MCP interactions, and RAG data access.
+
