@@ -1,6 +1,4 @@
-### Starting with the UI (Default)
-
-To start the application with the Electron UI:
+### Starting the Service (Default)
 
 ```bash
 # Make sure your Python virtual environment is activated
@@ -14,33 +12,64 @@ python main.py
 
 This will:
 1. Start the Python backend
-2. Launch the Electron UI
-3. Open the application in your default web browser
 
-
-# Executive Assistant
-
-A Python-based application designed to help manage time spent on various categorized activities. The application features both a command-line interface and an Electron-based graphical user interface.
+# RAM Agent Service (RAS)
+RAM Agent Service (RAS) is an agentic platform developed by RAM Software for orchestrating and executing autonomous AI agents that integrate deeply with business systems and workflows. RAS supports the Model Context Protocol (MCP) to manage structured inputs and actions, utilizes RAG (Retrieval-Augmented Generation) for dynamic, real-time knowledge access, and enables scalable inference pipelines for context-aware decision-making. Designed for modularity and control, RAS empowers teams to build and manage intelligent agents that adapt to complex environments and deliver high-leverage automation.
 
 ## Overview
 
-Executive Assistant helps you track and manage your time across different activities and categories. It provides:
+**RAM Agent Service (RAS)** is an agentic platform developed by **RAM Software** for orchestrating and executing **autonomous AI agents** that integrate seamlessly with business systems and workflows.
 
-- Activity tracking with timers
-- Category-based time allocation
-- Statistics and reporting
-- AI-assisted planning via LLM integration
-- MCP (Model Context Protocol) tool integration
+Built for **modularity** and **operational control**, RAS empowers teams to deploy intelligent agents capable of adapting to complex environments and delivering high-leverage automation.
+
+---
+
+## ✨ Key Features
+
+- **🔌 Model Context Protocol (MCP)**
+  - Structured communication between agents and tools
+  - Manages contextual input/output and defined agent actions
+
+- **📚 Retrieval-Augmented Generation (RAG)**
+  - Real-time knowledge access from external sources
+  - Improves relevance and decision-making in dynamic environments
+
+- **⚙️ Scalable Inference Pipelines**
+  - Efficient execution of AI workloads across agents
+  - Maintains traceability and context awareness
+
+---
+
+## 🧠 Agent Architecture
+
+All agents are defined in: config/agent_manifest.json
+
+Each agent is composed of the following modular components:
+
+| Component             | Description                                                                 |
+|-----------------------|-----------------------------------------------------------------------------|
+| `Input Trigger`       | Initiates the agent (e.g. webhook, scheduler, command)                      |
+| `Chat Model`          | The core LLM used for reasoning and output generation                       |
+| `Output Action`       | Defines how results are delivered (e.g. message, file, API call)            |
+| `Memory` (opt.)       | Stores contextual state or historical data                                  |
+| `Tools & Data` (opt.) | Allows use of external APIs, MCP commands, or RAG-enhanced data access      |
+
+---
+
+## 🧩 Design Principles
+
+- **Modularity** – Components can be swapped or extended with minimal friction
+- **Agentic Behavior** – Agents reason and act autonomously within defined scopes
+- **Observability** – Detailed logging and diagnostics for transparency and debugging
+- **Control** – Secure, declarative control over agent execution paths
 
 ## Prerequisites
 
-- Python 3.8 or higher
-- Node.js 16 or higher (for the UI)
-- npm (Node Package Manager)
+- Python 3.12
 
 ## Installation
 
-### 1. Set up Python Environment
+### Set up Python Environment
 
 It's recommended to use a virtual environment for Python dependencies:
 
@@ -55,86 +84,13 @@ venv\Scripts\activate
 source venv/bin/activate
 ```
 
-### 2. Install Python Dependencies
-
-With the virtual environment activated, install the required Python packages:
-
-```bash
-# Install required packages (requirements.txt not included in repo yet)
-# pip install -r requirements.txt
-
-# For now, you may need to install these packages manually:
-pip install flask requests python-dateutil
-```
-
-### 3. Install UI Dependencies
-
-The UI is built with Electron and requires Node.js dependencies:
-
-```bash
-# Navigate to the UI directory
-cd ui
-
-# Install Node.js dependencies
-npm install
-```
-
-## Running the Application
-
-### CLI Mode
-
-To run the application in CLI mode without the UI:
-
-```bash
-# Make sure your Python virtual environment is activated
-source venv/bin/activate  # On macOS/Linux
-# or
-venv\Scripts\activate  # On Windows
-
-# Run with the CLI flag
-python main.py --cli
-```
-
-### Command-line Options
-
-The application supports the following command-line options:
-
-- `--cli`: Run in CLI mode without UI
-- `--stats`: Display time stats and exit
-
-Example:
-```bash
-# Show stats and exit
-python main.py --stats
-```
-
-## Basic Usage
-
-### CLI Commands
-
-When running in CLI mode, the following commands are available:
-
-- `stats`: Display time statistics
-- `activities`: List all activities
-- `start <activity_id> <duration_minutes>`: Start an activity
-- `end`: End the current activity
-- `chat <message>`: Chat with the AI assistant
-- `exit/quit`: Exit the application
-
-### UI
-
-The Electron UI provides a more user-friendly interface for managing activities and viewing statistics. The UI automatically connects to the Python backend when launched.
-
 ## Development
 
 The application structure is organized as follows:
 
 - `main.py`: Main entry point
-- `backend/`: Backend Python modules
-- `config/`: Configuration settings
-- `data/`: Data storage
-- `ui/`: Electron UI
-
-## License
-
-MIT
+- `../../config/`: Configuration settings
+- `../input_triggers/`: Dynamically loaded code modules for initiating an Agent i.e. Discord, Gmail-Email Received, File Created, etc.
+- `../chat_models/`: Dynamically loaded code modules for communicating with an LLM i.e. OpenAI, Anthropic, Google, etc.
+- `../memory/`: Dynamically loaded code modules for recording interactions and feeding history back to a given model.
+- `../tools_and_data/`: Dynamically loaded code modules for interacting with MCP, OpenAPI or similar servers.
