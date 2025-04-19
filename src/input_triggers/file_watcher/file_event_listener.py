@@ -8,7 +8,7 @@ from datetime import datetime
 
 # Add parent directory to path to import from main module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from event_listener import EventListener
+from input_triggers.input_triggers import EventListener
 from gpt_thread import get_gpt_handler
 
 class FileWatcherEventListener(EventListener):

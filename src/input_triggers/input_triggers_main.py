@@ -16,7 +16,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 # Now imports relative to src should work
-from input_triggers.event_listener import EventListener # Adjusted import path
+from input_triggers.input_triggers import EventListener # Adjusted import path
 from gpt_thread import get_gpt_handler
 
 # Dictionary to store loaded event listeners
