@@ -108,10 +108,6 @@ class ConversationLogger:
             "log_file": log_file
         }
 
-        # --- UI Update Signal Removed ---
-        # if hasattr(sys, 'ui_update_queue') and sys.ui_update_queue:
-        #     sys.ui_update_queue.put(("conversation_update", event_listener_name))
-
         return log_file
 
     @staticmethod
@@ -271,9 +267,6 @@ def patch_gpt_handler():
         print(f"Failed to apply patches to GPT handler: {e}")
 
 
-# --- EventListenerUI Class Removed ---
-
-
 async def run_event_listeners():
     """Run the event listeners in the background."""
     print("Creating log directory...")
@@ -309,9 +302,6 @@ if __name__ == "__main__":
         print(f"Error during MCP startup: {e}")
         sys.exit(1) # Exit if startup fails
 
-    # --- UI Queue Removed ---
-    # sys.ui_update_queue = queue.Queue()
-
     print("Initializing event listeners...")
     # Start the event listeners in a separate thread
     listener_thread = threading.Thread(target=start_event_listeners_thread, daemon=True)
@@ -332,5 +322,4 @@ if __name__ == "__main__":
         print("Shutdown complete.")
 
     # --- UI Creation and mainloop Removed ---
-    # app = EventListenerUI()
-    # app.mainloop()
+    # TODO: Start HTTP service for UI
