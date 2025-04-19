@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional, Type
 from pathlib import Path # Use pathlib for better path manipulation
 
 # Determine the absolute path to the 'src' directory
-# Assumes this file is located at src/input_triggers/event_listeners_main.py
+# Assumes this file is located at src/input_triggers/input_triggers_main.py
 # Goes up two levels: input_triggers -> src
 SRC_DIR = Path(__file__).resolve().parent.parent
 # Add src directory to sys.path to ensure imports work correctly,

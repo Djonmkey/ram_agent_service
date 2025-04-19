@@ -15,13 +15,13 @@ event_listeners_dir = os.path.join(os.path.dirname(__file__), 'event_listeners')
 if event_listeners_dir not in sys.path:
     sys.path.append(event_listeners_dir)
 
-# Import the main function from event_listeners_main.py
-# Make sure event_listeners_main doesn't rely on UI elements
+# Import the main function from input_triggers_main.py
+# Make sure input_triggers_main doesn't rely on UI elements
 try:
-    from event_listeners_main import main as event_listeners_main, listeners
+    from input_triggers_main import main as input_triggers_main, listeners
 except ImportError as e:
-    print(f"Error importing from event_listeners_main: {e}")
-    print("Please ensure event_listeners_main.py exists and is accessible.")
+    print(f"Error importing from input_triggers_main: {e}")
+    print("Please ensure input_triggers_main.py exists and is accessible.")
     sys.exit(1)
 
 # Import the GPT handler - ensure gpt_thread doesn't rely on UI
@@ -277,8 +277,8 @@ async def run_event_listeners():
 
     print("Starting event listeners...")
     try:
-        # Ensure event_listeners_main is an async function
-        await event_listeners_main()
+        # Ensure input_triggers_main is an async function
+        await input_triggers_main()
         print("Event listeners finished.")
     except Exception as e:
         print(f"Error running event listeners main function: {e}")
