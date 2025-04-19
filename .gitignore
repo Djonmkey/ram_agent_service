@@ -172,3 +172,9 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+.DS_Store
+config/agent_manifest.json
+config/agents/*
+src/tools_and_data/mcp_timely/cache/cumulative_report.json
+src/tools_and_data/mcp_timely/cache/list_projects.json
+src/tools_and_data/mcp_timely/cache/list_tasks.json
