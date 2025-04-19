@@ -1,201 +1,366 @@
+# src/input_triggers/input_triggers.py
 import json
-from abc import ABC, abstractmethod
-import sys
 import os
-from constants import MCP_COMMANDS_PATH, MCP_SECRETS_PATH
+import sys
+import asyncio
+import logging
+from abc import ABC, abstractmethod
+from typing import Optional, Dict, Any, Callable
+from pathlib import Path
+from importlib.util import spec_from_file_location, module_from_spec
 
-# Add parent directory to path to import from main module
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from gpt_thread import get_gpt_handler
+# Ensure src is in path for sibling imports if run directly (though main entry point should handle this)
+SRC_DIR = Path(__file__).resolve().parent.parent
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
-# Global Variable for initial prompt.  Used to recover initial prompt when MCP calls are made
-INITIAL_PROMPT = ""
+# Assuming constants are defined relative to src or configured
+# If constants.py is in src: from constants import ...
+# Otherwise, make these paths configurable
+DEFAULT_MCP_COMMANDS_PATH = SRC_DIR / "mcp_commands" / "commands.json"
+DEFAULT_MCP_SECRETS_PATH = SRC_DIR / "mcp_commands" / "secrets.json"
+DEFAULT_MCP_MODULES_DIR = SRC_DIR / "mcp_commands"
+
+# Import GPT handler safely
+try:
+    from gpt_thread import get_gpt_handler
+except ImportError:
+    print("Warning: Could not import get_gpt_handler. AI agent functionality will be limited.")
+    get_gpt_handler = None # type: ignore
+
 
 class InputTrigger(ABC):
     """
-    Abstract base class for event listeners.
-    Any event source (Discord, Slack, Email, etc.) should implement this interface.
+    Abstract base class for input triggers (event listeners).
+    Provides common functionality for configuration, logging, and AI agent interaction.
     """
-    
+
+    def __init__(self, config_path: Optional[str] = None, config_data: Optional[Dict[str, Any]] = None):
+        """
+        Initialize the base trigger.
+
+        Args:
+            config_path: Optional path to a JSON configuration file.
+                         If None, defaults to a JSON file with the same name as the
+                         trigger class in the same directory.
+            config_data: Optional dictionary containing configuration data.
+                         Overrides data loaded from config_path if both are provided.
+        """
+        self.config: Dict[str, Any] = {}
+        self._resolve_config_path(config_path)
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.loop: Optional[asyncio.AbstractEventLoop] = None
+        self._load_config(config_data)
+
+        # Get configurable paths, falling back to defaults
+        self.mcp_commands_path = Path(self.config.get("mcp_commands_path", DEFAULT_MCP_COMMANDS_PATH))
+        self.mcp_secrets_path = Path(self.config.get("mcp_secrets_path", DEFAULT_MCP_SECRETS_PATH))
+        self.mcp_modules_dir = Path(self.config.get("mcp_modules_dir", DEFAULT_MCP_MODULES_DIR))
+
+        self.logger.debug(f"Base trigger initialized for {self.name}")
+        self.logger.debug(f"MCP Commands Path: {self.mcp_commands_path}")
+        self.logger.debug(f"MCP Secrets Path: {self.mcp_secrets_path}")
+        self.logger.debug(f"MCP Modules Dir: {self.mcp_modules_dir}")
+
+
+    def _resolve_config_path(self, config_path: Optional[str]):
+        """Determine the configuration file path."""
+        if config_path:
+            self.config_path = Path(config_path)
+        else:
+            # Default: <ClassName>.json in the same directory as the trigger's source file
+            trigger_file_path = Path(sys.modules[self.__class__.__module__].__file__)
+            default_config_name = f"{trigger_file_path.stem}.json"
+            self.config_path = trigger_file_path.parent / default_config_name
+        self.logger.debug(f"Resolved config path: {self.config_path}")
+
+    def _load_config(self, config_data: Optional[Dict[str, Any]] = None):
+        """Load configuration from file and merge with provided data."""
+        loaded_config = {}
+        if self.config_path and self.config_path.exists():
+            try:
+                with open(self.config_path, 'r') as f:
+                    loaded_config = json.load(f)
+                self.logger.info(f"Loaded configuration from {self.config_path}")
+            except json.JSONDecodeError:
+                self.logger.error(f"Failed to decode JSON from config file: {self.config_path}", exc_info=True)
+            except Exception:
+                self.logger.error(f"Error loading config file: {self.config_path}", exc_info=True)
+        elif self.config_path:
+             self.logger.warning(f"Configuration file not found: {self.config_path}")
+
+        # Merge loaded config with provided config_data (config_data takes precedence)
+        self.config = {**loaded_config, **(config_data or {})}
+        self.logger.debug(f"Final configuration loaded: {list(self.config.keys())}") # Log keys, not values
+
+
     @abstractmethod
     async def initialize(self):
         """
-        Initialize the event listener.
-        This method should set up any necessary connections or configurations.
+        Initialize the specific trigger.
+        Should be called by subclasses after super().initialize().
+        Responsible for setting up connections, resources, etc.
         """
-        pass
-    
+        self.loop = asyncio.get_running_loop()
+        self.logger.info(f"Initializing trigger: {self.name}")
+        # Subclasses should continue initialization here
+
     @abstractmethod
     async def start(self):
         """
-        Start listening for events.
-        This method should begin the event listening process.
+        Start the trigger's main loop or event listening process.
         """
+        self.logger.info(f"Starting trigger: {self.name}")
         pass
-    
+
     @abstractmethod
     async def stop(self):
         """
-        Stop listening for events.
-        This method should clean up any resources and stop the event listening process.
+        Stop the trigger and clean up resources.
         """
+        self.logger.info(f"Stopping trigger: {self.name}")
         pass
-    
+
     @property
     @abstractmethod
     def name(self) -> str:
         """
-        Get the name of the event listener.
-        
-        Returns:
-            The name of the event listener.
+        Get the unique name of the trigger.
         """
         pass
 
+    # --- MCP Command Handling ---
+
+    def _load_json_safely(self, file_path: Path) -> Optional[Dict]:
+        """Safely load JSON data from a file."""
+        if not file_path.exists():
+            self.logger.error(f"Required file not found: {file_path}")
+            return None
+        try:
+            with open(file_path, "r") as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            self.logger.error(f"Failed to decode JSON from: {file_path}", exc_info=True)
+            return None
+        except Exception:
+            self.logger.error(f"Error reading file: {file_path}", exc_info=True)
+            return None
+
     def contains_command(self, message_text: str) -> bool:
         """Checks if the message text contains any known MCP command or alias."""
-        try:
-            with open(MCP_COMMANDS_PATH, "r") as f:
-                command_data = json.load(f)
+        command_data = self._load_json_safely(self.mcp_commands_path)
+        if not command_data:
+            return False
 
-            message_text = message_text.strip()
+        message_text_lower = message_text.lower().strip() # Case-insensitive check
+        try:
             for cmd in command_data.get("mcp_commands", []):
-                if cmd.get("system_text") and cmd["system_text"] in message_text:
+                system_text = cmd.get("system_text")
+                if system_text and system_text.lower() in message_text_lower:
+                    self.logger.debug(f"Found command '{system_text}' in message.")
                     return True
                 for alias in cmd.get("aliases", []):
-                    if alias in message_text:
+                    if alias.lower() in message_text_lower:
+                        self.logger.debug(f"Found command alias '{alias}' in message.")
                         return True
             return False
-        except Exception as e:
-            print(f"Error checking for command: {e}")
+        except Exception:
+            self.logger.error("Error during command checking", exc_info=True)
             return False
-            
-    def _run_mcp_command(self, command_text: str) -> str:
-        """Executes an MCP command from commands.json."""
-        try:
-            with open(MCP_COMMANDS_PATH, "r") as f:
-                command_data = json.load(f)
 
-            matched = next(
-                (cmd for cmd in command_data["mcp_commands"] if cmd["system_text"] == command_text),
+    def _run_mcp_command(self, command_text: str) -> str:
+        """Executes a specific MCP command identified by its system_text."""
+        self.logger.info(f"Attempting to run MCP command: {command_text}")
+        command_data = self._load_json_safely(self.mcp_commands_path)
+        secrets_data = self._load_json_safely(self.mcp_secrets_path)
+
+        if not command_data or not secrets_data:
+            return "Error: Could not load MCP command or secrets configuration."
+
+        try:
+            # Find the command definition matching the exact system_text
+            matched_cmd = next(
+                (cmd for cmd in command_data.get("mcp_commands", [])
+                 if cmd.get("system_text") == command_text),
                 None
             )
-            if not matched:
+            if not matched_cmd:
+                self.logger.warning(f"Unknown MCP command requested: {command_text}")
                 return f"Unknown MCP command: {command_text}"
 
-            module_path = matched["python_code_module"]
-            handler_name = matched.get("handler_function", "execute_command")
+            module_path_str = matched_cmd.get("python_code_module")
+            handler_name = matched_cmd.get("handler_function", "execute_command")
 
-            # Load secrets
-            with open(MCP_SECRETS_PATH, "r") as f:
-                secrets = json.load(f)
-                
-            # Get common parameters
-            common_params = secrets.get("common", {})
+            if not module_path_str:
+                 self.logger.error(f"Command '{command_text}' is missing 'python_code_module' in config.")
+                 return f"Configuration error for command: {command_text}"
 
-            # Find secrets for the matching module
+            module_file = self.mcp_modules_dir / module_path_str
+            if not module_file.exists():
+                self.logger.error(f"MCP module file not found: {module_file}")
+                return f"Error: Module file not found for command {command_text}"
+
+            # Load secrets for the module
+            common_params = secrets_data.get("common", {})
             secret_entry = next(
-                (s for s in secrets["secrets"] if s["python_code_module"] == module_path),
+                (s for s in secrets_data.get("secrets", [])
+                 if s.get("python_code_module") == module_path_str),
                 None
             )
             if not secret_entry:
-                return f"Missing secrets for module: {module_path}"
+                self.logger.warning(f"Missing secrets entry for module: {module_path_str}")
+                # Decide if this is an error or if common params are enough
+                # return f"Missing secrets for module: {module_path_str}"
+                internal_params = common_params # Use only common if specific are missing
+            else:
+                # Merge common with specific, specific taking precedence
+                internal_params = {**common_params, **secret_entry.get("internal_params", {})}
 
-            # Merge common parameters with module-specific parameters
-            # Module-specific parameters take precedence
-            internal_params = {**common_params, **secret_entry["internal_params"]}
-            command_parameters = {}  # Add if needed
+            # Dynamically load and execute the module's handler function
+            spec = spec_from_file_location(module_file.stem, module_file)
+            if not spec or not spec.loader:
+                 self.logger.error(f"Could not create module spec for {module_file}")
+                 return f"Error loading module for command {command_text}"
 
-            # Add mcp_commands to sys.path to allow importing modules from there
-            mcp_commands_dir = os.path.abspath("mcp_commands")
-            if mcp_commands_dir not in sys.path:
-                sys.path.append(mcp_commands_dir)
-                
-            # Load and run the module
-            from importlib.util import spec_from_file_location, module_from_spec
-            from pathlib import Path
-            module_file = Path(os.path.join(mcp_commands_dir, module_path))
-            spec = spec_from_file_location("cmd_mod", module_file)
             cmd_mod = module_from_spec(spec)
+            # Add module's directory to sys.path temporarily if needed for relative imports within the module
+            # module_dir = str(module_file.parent)
+            # if module_dir not in sys.path:
+            #     sys.path.insert(0, module_dir)
+            #     needs_path_removal = True
+            # else:
+            #     needs_path_removal = False
+
             spec.loader.exec_module(cmd_mod)
 
-            # Call the handler
+            # if needs_path_removal:
+            #     sys.path.pop(0) # Clean up sys.path
+
             if hasattr(cmd_mod, handler_name):
                 handler = getattr(cmd_mod, handler_name)
-                print(f"🚀 Running MCP Command: {module_path}.{handler_name}")
+                self.logger.info(f"🚀 Running MCP Command: {module_path_str}.{handler_name}")
+                # Assuming handler takes (command_params, internal_params)
+                # command_params might be extracted from the original message if needed
                 result = handler({}, internal_params)
-                print(f"✅ Result:\n{result}\n")
+                self.logger.info(f"✅ MCP Command '{command_text}' result received.")
+                # Limit result length for logging if necessary
+                # self.logger.debug(f"Result snippet: {str(result)[:200]}...")
+                return str(result) # Ensure result is string
             else:
-                print(f"⚠️ Handler '{handler_name}' not found in {module_path}")
+                self.logger.error(f"Handler function '{handler_name}' not found in module {module_path_str}")
+                return f"Error: Handler not found for command {command_text}"
 
         except Exception as e:
-            return f"Error executing command: {e}"
-            
-    def _process_mcp_commands(self, message_text: str) -> str:
-        """Process and execute MCP commands found in the message text."""
-        processed_text = (
-            'In response to my initial prompt, "' + INITIAL_PROMPT + '", '
-            'you requested the results of one or more MCP commands. '
-            'Here are those results:\n\n'
-        )
+            self.logger.error(f"Error executing MCP command '{command_text}': {e}", exc_info=True)
+            return f"Error executing command {command_text}: {e}"
 
-        try:
-            # Load commands data
-            with open(MCP_COMMANDS_PATH, "r") as f:
-                command_data = json.load(f)
-            
-            # Get all available commands
-            all_commands = [cmd["system_text"] for cmd in command_data.get("mcp_commands", [])]
-            
-            # Sort commands by length (descending) to avoid partial matches
-            all_commands.sort(key=len, reverse=True)
-            
-            # Find and replace all commands in the response
-            for command in all_commands:
-                if command in message_text:
-                    # Execute the command
-                    command_result = self._run_mcp_command(command)
-                    
-                    # Replace the command with its result in the processed text
-                    processed_text = processed_text + f"{command} Results:\n\n{command_result}\n"
-        
-        except Exception as e:
-            # In case of error, append error message to the response
-            processed_text += f"\n\nError processing commands: {str(e)}"
-
-        processed_text = (
-            processed_text
-            + '\n\nPlease use the MCP command results provided to answer my initial prompt: "'
-            + INITIAL_PROMPT
-            + '"'
-        )
-
-        return processed_text
-
-
-    def _execute_ai_agent_async(self, query: str, callback=None, recursion_depth=0):
+    def _process_mcp_commands(self, gpt_response: str, initial_query: str) -> str:
         """
-        Runs your AI agent locally using OpenAI API and MCP.
-        If GPT returns a known command (e.g., /list_projects), execute it.
+        Finds MCP commands in the GPT response, executes them, and formats a new prompt.
+
+        Args:
+            gpt_response: The raw response from the GPT model.
+            initial_query: The original user query that started the interaction.
+
+        Returns:
+            A new prompt string containing the command results, instructing the AI
+            to use them to answer the initial query.
         """
-        # Set a maximum recursion depth to prevent infinite loops
-        MAX_RECURSION_DEPTH = 2
+        self.logger.debug("Processing potential MCP commands in GPT response.")
+        command_data = self._load_json_safely(self.mcp_commands_path)
+        if not command_data:
+            return "Error: Could not load MCP command configuration for processing."
+
+        # Get all defined command system_texts
+        all_commands = [
+            cmd["system_text"] for cmd in command_data.get("mcp_commands", []) if "system_text" in cmd
+        ]
+        # Sort by length descending to match longer commands first
+        all_commands.sort(key=len, reverse=True)
+
+        executed_results = []
+        found_commands = False
+
+        # Iterate through commands and execute if found in the response
+        temp_response = gpt_response # Work on a copy
+        for command in all_commands:
+            # Use case-insensitive check but execute with original case
+            if command.lower() in temp_response.lower():
+                found_commands = True
+                self.logger.info(f"Found command '{command}' in response, executing.")
+                command_result = self._run_mcp_command(command)
+                executed_results.append(f"--- Command: {command} ---\nResult:\n{command_result}\n--- End {command} ---")
+                # Optional: Remove the command from temp_response to avoid re-matching parts?
+                # This is complex if commands overlap. Simpler to just list results.
+
+        if not found_commands:
+             self.logger.debug("No MCP commands found in the response.")
+             # Should not happen if called after contains_command, but handle defensively
+             return gpt_response # Return original if no commands were actually found/executed
+
+        # Format the new prompt for the AI
+        results_text = "\n\n".join(executed_results)
+        new_prompt = (
+            f"In response to my original request \"{initial_query}\", you asked to run one or more tools/commands. "
+            f"I have executed them and here are the results:\n\n"
+            f"{results_text}\n\n"
+            f"Please use these results to provide the final answer to my original request: \"{initial_query}\""
+        )
+        self.logger.debug("Formatted new prompt with MCP command results.")
+        return new_prompt
+
+
+    # --- AI Agent Interaction ---
+
+    def _execute_ai_agent_async(self,
+                                initial_query: str,
+                                callback: Callable[[str], None],
+                                current_prompt: Optional[str] = None,
+                                recursion_depth: int = 0):
+        """
+        Handles interaction with the AI agent, including MCP command execution loops.
+
+        Args:
+            initial_query: The original query from the user/event source.
+            callback: The final callback function to call with the AI's definitive answer.
+            current_prompt: The prompt to send to the AI in the current step. Defaults to initial_query.
+            recursion_depth: Internal counter to prevent infinite loops.
+        """
+        MAX_RECURSION_DEPTH = 3 # Allow initial call + 2 rounds of MCP commands
+        if get_gpt_handler is None:
+            self.logger.error("GPT Handler not available. Cannot execute AI agent.")
+            callback("Error: AI agent is not configured.")
+            return
+
         gpt_handler = get_gpt_handler()
+        prompt_to_send = current_prompt if current_prompt is not None else initial_query
 
-        if recursion_depth == 0:
-            global INITIAL_PROMPT
-            INITIAL_PROMPT = query
+        if recursion_depth >= MAX_RECURSION_DEPTH:
+            self.logger.warning(f"Max recursion depth ({MAX_RECURSION_DEPTH}) reached for query: {initial_query[:50]}...")
+            callback("Error: Reached maximum processing depth. Could not fully resolve request.")
+            return
 
-        def wrapped_callback(response: str):
-            # Check if the response is an MCP command
-            if self.contains_command(response) and recursion_depth < MAX_RECURSION_DEPTH:
-                result_with_mcp_commands = self._process_mcp_commands(response)
-                
-                if callback:
-                    # Pass the incremented recursion depth to prevent infinite loops
-                    self._execute_ai_agent_async(result_with_mcp_commands, callback, recursion_depth + 1)
+        self.logger.info(f"Executing AI Agent (Depth: {recursion_depth}). Prompt starts with: {prompt_to_send[:100]}...")
+
+        # Define the callback that GPT handler will call
+        def gpt_handler_callback(response: str):
+            self.logger.debug(f"AI Agent response received (Depth: {recursion_depth}). Starts with: {response[:100]}...")
+            # Check if the response contains an MCP command
+            if self.contains_command(response):
+                self.logger.info(f"AI response contains MCP command(s). Processing... (Depth: {recursion_depth})")
+                # Generate the new prompt with command results
+                next_prompt = self._process_mcp_commands(response, initial_query)
+                # Recursive call with the new prompt and incremented depth
+                self._execute_ai_agent_async(initial_query, callback, next_prompt, recursion_depth + 1)
             else:
-                if callback:
-                    callback(response)
+                # No commands, this is the final answer
+                self.logger.info(f"AI Agent processing complete (Depth: {recursion_depth}). Calling final callback.")
+                callback(response)
 
-        gpt_handler.ask_gpt(query, wrapped_callback)
+        # Make the asynchronous call to the GPT handler
+        try:
+            gpt_handler.ask_gpt(prompt_to_send, gpt_handler_callback)
+        except Exception as e:
+             self.logger.error(f"Failed to queue request to GPT handler: {e}", exc_info=True)
+             callback(f"Error: Failed to communicate with AI agent: {e}")
+

@@ -1,322 +1,228 @@
 # src/input_triggers/discord/discord_bot_trigger.py
-import json
-import os
 import discord
-import sys
 import asyncio
+import os
+import sys
 from discord.ext import commands
+from typing import Optional
 
-# Add project root to path to allow sibling imports (e.g., output_actions)
-# Adjust depth as necessary based on your execution context
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-sys.path.append(PROJECT_ROOT)
+# Use Pathlib and ensure src is discoverable
+from pathlib import Path
+SRC_DIR = Path(__file__).resolve().parent.parent.parent # discord -> input_triggers -> src
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
-from src.gpt_thread import get_gpt_handler # Assuming gpt_thread is in src
-from src.event_listener import EventListener # Assuming event_listener is in src
-# Import the new output action class
-from src.output_actions.discord.discord_bot_output_action import DiscordBotOutputAction
+# Import base class and output action
+from input_triggers.input_triggers import InputTrigger
+from output_actions.discord.discord_bot_output_action import DiscordBotOutputAction
 
-class DiscordEventListener(EventListener):
+# Default config path relative to this file
+DEFAULT_CONFIG_PATH = Path(__file__).parent / "discord_bot_trigger.json"
+
+class DiscordEventListener(InputTrigger):
     """
-    Discord implementation of EventListener interface.
-    Focuses on receiving messages and triggering actions.
+    Discord input trigger using discord.py.
+    Listens for messages and commands, interacts with the AI agent via the base class.
     """
 
-    def __init__(self, config_path: str = None):
+    def __init__(self, config_path: Optional[str] = None):
         """
         Initialize Discord event listener.
 
         Args:
-            config_path: Path to the configuration JSON file. If None, uses default path.
+            config_path: Path to the configuration JSON file.
+                         Defaults to discord_bot_trigger.json in the same directory.
         """
-        self._name = "DiscordTrigger"
-        # Consider making the config file name match the trigger file name
-        self.config_path = config_path or os.path.join(os.path.dirname(__file__), 'discord_bot_trigger.json')
-        self.bot: commands.Bot = None
-        self.token: str = None
-        self.task: asyncio.Task = None
-        self.loop: asyncio.AbstractEventLoop = None
-        self.output_action: DiscordBotOutputAction = None # Placeholder for the output handler
+        # Initialize base class (loads config, sets up logger)
+        super().__init__(config_path=config_path or str(DEFAULT_CONFIG_PATH))
+
+        self.bot: Optional[commands.Bot] = None
+        self.token: Optional[str] = None
+        self.task: Optional[asyncio.Task] = None
+        self.output_action: Optional[DiscordBotOutputAction] = None
 
     @property
     def name(self) -> str:
         """Get the name of the event listener."""
-        return self._name
-
-    # Removed send_long_message - moved to DiscordBotOutputAction
+        return self.config.get("trigger_name", "DiscordTrigger") # Get name from config or default
 
     async def initialize(self):
         """Initialize the Discord bot and the associated output action handler."""
-        self.token = self._load_discord_token()
-        if not self.token:
-             print("Error: Discord token could not be loaded. Cannot initialize.")
-             return # Or raise an exception
+        await super().initialize() # Sets up self.loop
 
-        self.loop = asyncio.get_running_loop()
+        self.token = self.config.get('discord_bot_token')
+        if not self.token:
+             self.logger.critical("Discord token ('discord_bot_token') not found in configuration. Cannot initialize.")
+             raise ValueError("Discord token missing in configuration.")
 
         intents = discord.Intents.default()
-        intents.message_content = True # Ensure this is enabled in Discord Developer Portal
+        # Ensure message content intent is enabled in config and Discord Dev Portal
+        if self.config.get("enable_message_content_intent", True):
+             intents.message_content = True
+             self.logger.info("Message content intent enabled.")
+        else:
+             self.logger.warning("Message content intent is disabled. Bot may not read message content.")
 
-        self.bot = commands.Bot(command_prefix='!', intents=intents)
+        command_prefix = self.config.get("command_prefix", "!")
+        self.bot = commands.Bot(command_prefix=command_prefix, intents=intents)
 
         # Initialize the output action handler, passing the bot instance
-        self.output_action = DiscordBotOutputAction(self.bot)
+        try:
+            self.output_action = DiscordBotOutputAction(self.bot)
+            self.logger.info("Discord Output Action initialized.")
+        except Exception as e:
+            self.logger.critical(f"Failed to initialize DiscordBotOutputAction: {e}", exc_info=True)
+            raise # Re-raise critical error
 
-        # --- Register Event Handlers ---
+        # Register event handlers
         self._register_event_handlers()
+        self.logger.info(f"Discord trigger '{self.name}' initialized successfully.")
 
 
     def _register_event_handlers(self):
         """Registers discord.py event handlers."""
+        if not self.bot or not self.output_action:
+            self.logger.error("Bot or Output Action not initialized, cannot register handlers.")
+            return
 
         @self.bot.event
         async def on_ready():
-            print(f'Discord Trigger: Logged in as {self.bot.user}')
-            print(f'Discord Output Action: Initialized for bot {self.output_action.bot.user}')
+            self.logger.info(f'Discord Bot Logged in as {self.bot.user}')
+            self.logger.info(f'Output Action ready for bot {self.output_action.bot.user}') # type: ignore
 
         @self.bot.event
         async def on_message(message: discord.Message):
             """Handle incoming messages."""
             if message.author == self.bot.user:
                 return # Ignore messages from the bot itself
+            if message.content.startswith(self.bot.command_prefix):
+                 # Let the command handler process commands
+                 await self.bot.process_commands(message)
+                 return
+
+            self.logger.info(f"Received message from {message.author} in #{message.channel}: {message.content[:50]}...")
 
             # --- Acknowledge Receipt (Optional but Recommended) ---
-            # Sending the ack message is technically output, but tightly coupled to input processing start.
-            # Alternatively, the output_action could have an acknowledge method.
             ack_message = None
-            try:
-                # Send ack immediately
-                ack_message = await message.channel.send("Working on it...")
-            except discord.Forbidden:
-                 print(f"Warning: Cannot send ack message in channel {message.channel.id} (missing permissions).")
-            except discord.HTTPException as e:
-                 print(f"Warning: Failed to send ack message in channel {message.channel.id}: {e}")
+            if self.config.get("send_acknowledgement", True):
+                try:
+                    ack_message = await message.channel.send("Working on it...")
+                    self.logger.debug(f"Sent acknowledgement to #{message.channel}")
+                except discord.Forbidden:
+                    self.logger.warning(f"Cannot send ack message in channel {message.channel.id} (missing permissions).")
+                except discord.HTTPException as e:
+                    self.logger.warning(f"Failed to send ack message in channel {message.channel.id}: {e}")
 
-
-            # --- Process the message asynchronously ---
-            async def handle_long_task():
-                response_future = asyncio.Future()
-
-                # Callback for the AI agent thread to set the result in the main loop
-                def set_response(result):
-                    if self.loop and not self.loop.is_closed():
-                        self.loop.call_soon_threadsafe(response_future.set_result, result)
-                    else:
-                         # Handle case where loop is closed before response arrives
-                         print("Warning: Event loop closed before AI response could be processed.")
-                         # Attempt to set result anyway, might fail silently or raise
-                         try:
-                            response_future.set_result(None) # Indicate failure or no result
-                         except Exception:
-                            pass
-
-
-                # Queue the GPT request on a separate thread
-                # Pass the callback to bridge the thread and asyncio event loop
-                self._execute_ai_agent_async(message.content, set_response)
-
-                # Await the result from the AI agent thread
-                agent_response = await response_future
-
-                # --- Clean up Ack Message ---
+            # --- Define the callback for the AI agent ---
+            async def final_callback(agent_response: str):
+                self.logger.info(f"Received final AI response for message {message.id}. Length: {len(agent_response)}")
+                # Clean up Ack Message
                 if ack_message:
-                    await self.output_action.delete_message(ack_message) # Use output action to delete
+                    try:
+                        await self.output_action.delete_message(ack_message) # type: ignore
+                        self.logger.debug(f"Deleted acknowledgement message {ack_message.id}")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to delete ack message {ack_message.id}: {e}")
 
-                # --- Send Final Response via Output Action ---
+                # Send Final Response via Output Action
                 if agent_response:
-                    await self.output_action.send_message(message.channel, agent_response)
+                    await self.output_action.send_message(message.channel, agent_response) # type: ignore
                 else:
                     # Handle cases where the agent explicitly returned nothing or an error occurred
-                    await self.output_action.send_message(message.channel, "Sorry, I couldn't generate a response.")
+                    self.logger.warning(f"AI agent returned empty or error response for message {message.id}")
+                    await self.output_action.send_message(message.channel, "Sorry, I couldn't generate a response.") # type: ignore
 
-            # Run the processing task without blocking the on_message handler
-            asyncio.create_task(handle_long_task())
+            # --- Execute AI agent using base class method ---
+            # Pass the original message content as the initial query
+            # The callback defined above will handle the final result
+            self._execute_ai_agent_async(message.content, final_callback)
 
 
-        @self.bot.command(name='agent')
-        async def run_agent(ctx: commands.Context, *, query: str):
-            """Handle the !agent command."""
-            # Create a Future to await the response from the AI agent thread
-            response_future = asyncio.Future()
+        @self.bot.command(name=self.config.get("agent_command_name", "agent"))
+        async def run_agent_command(ctx: commands.Context, *, query: str):
+            """Handle the agent command."""
+            self.logger.info(f"Received command '{ctx.command.name}' from {ctx.author} with query: {query[:50]}...")
 
-            # Callback for the AI agent thread
-            def set_response(result):
-                 if self.loop and not self.loop.is_closed():
-                    self.loop.call_soon_threadsafe(response_future.set_result, result)
-                 else:
-                    print("Warning: Event loop closed before AI response could be processed for !agent command.")
-                    try:
-                        response_future.set_result(None)
-                    except Exception:
-                        pass
+            # --- Define the callback for the AI agent ---
+            async def final_callback(agent_response: str):
+                self.logger.info(f"Received final AI response for command {ctx.message.id}. Length: {len(agent_response)}")
+                # Send Final Response via Output Action using reply context
+                if agent_response:
+                    await self.output_action.send_reply(ctx, agent_response) # type: ignore
+                else:
+                    self.logger.warning(f"AI agent returned empty or error response for command {ctx.message.id}")
+                    await self.output_action.send_reply(ctx, "Sorry, there was an issue generating the response for your command.") # type: ignore
 
             # Send typing indicator while waiting
             async with ctx.typing():
-                # Queue the GPT request on a separate thread
-                self._execute_ai_agent_async(query, set_response)
+                # --- Execute AI agent using base class method ---
+                self._execute_ai_agent_async(query, final_callback)
 
-                # Wait for the response from the AI agent
-                response = await response_future
-
-                # --- Send Response via Output Action ---
-                if response:
-                    await self.output_action.send_reply(ctx, response) # Use send_reply for context
-                else:
-                    await self.output_action.send_reply(ctx, "Sorry, there was an issue generating the response for your command.")
+        self.logger.debug("Discord event handlers registered.")
 
 
     async def start(self):
         """Start the Discord bot event listener."""
+        await super().start() # Log start message
+
         if not self.bot or not self.token or not self.output_action:
-            print("Trigger not initialized. Call initialize() first.")
-            await self.initialize() # Attempt initialization
-            # Check again after attempting initialization
-            if not self.bot or not self.token or not self.output_action:
-                 print("Initialization failed. Cannot start trigger.")
-                 return None # Indicate failure to start
+            self.logger.error("Trigger not properly initialized. Call initialize() first and ensure token is valid.")
+            # Optionally re-attempt initialization or raise error
+            # await self.initialize()
+            # if not self.bot or not self.token or not self.output_action:
+            #      raise RuntimeError("Discord trigger initialization failed.")
+            return # Or raise error
 
         if self.task and not self.task.done():
-            print("Trigger task is already running.")
+            self.logger.warning("Start called but trigger task is already running.")
             return self.task
 
-        print("Starting Discord trigger...")
-        # Run the bot's main loop
-        # Note: bot.start() is blocking, so we run it in a task
-        # to allow the main application to continue (if applicable)
-        self.task = asyncio.create_task(self.bot.start(self.token))
-        print("Discord trigger task created.")
-        return self.task # Return the task so it can be awaited or managed
+        self.logger.info("Starting Discord bot connection...")
+        try:
+            # Run the bot's main loop in a task
+            self.task = asyncio.create_task(self.bot.start(self.token), name=f"{self.name}_run")
+            self.logger.info(f"Discord trigger task '{self.task.get_name()}' created.")
+            # You might want to await self.bot.wait_until_ready() here if needed
+            # await self.bot.wait_until_ready()
+            # self.logger.info("Bot is ready.")
+            return self.task
+        except discord.LoginFailure:
+            self.logger.critical("Login failed: Improper token provided.")
+            raise
+        except Exception as e:
+            self.logger.critical(f"Failed to start Discord bot: {e}", exc_info=True)
+            self.task = None # Ensure task is None if start fails
+            raise # Re-raise the exception
+
 
     async def stop(self):
         """Stop the Discord bot gracefully."""
-        print("Stopping Discord trigger...")
+        await super().stop() # Log stop message
+
         if self.bot and not self.bot.is_closed():
+            self.logger.info("Closing Discord bot connection...")
             await self.bot.close()
-            print("Discord bot connection closed.")
+            self.logger.info("Discord bot connection closed.")
 
         if self.task:
+            task_name = self.task.get_name()
             if not self.task.done():
+                self.logger.info(f"Cancelling trigger task '{task_name}'...")
                 self.task.cancel()
                 try:
                     await self.task
                 except asyncio.CancelledError:
-                    print("Discord trigger task cancelled successfully.")
+                    self.logger.info(f"Trigger task '{task_name}' cancelled successfully.")
                 except Exception as e:
-                    print(f"Error during trigger task cancellation: {e}")
+                    # Log exceptions that might occur during task cleanup
+                    self.logger.error(f"Error during trigger task '{task_name}' cancellation/cleanup: {e}", exc_info=True)
             else:
-                 # Check for exceptions if the task finished unexpectedly
-                 if self.task.exception():
-                      print(f"Discord trigger task finished with exception: {self.task.exception()}")
+                 # Check if the task finished with an exception
+                 exception = self.task.exception()
+                 if exception:
+                      self.logger.error(f"Trigger task '{task_name}' finished with an exception: {exception}", exc_info=exception)
                  else:
-                      print("Discord trigger task already finished.")
+                      self.logger.info(f"Trigger task '{task_name}' already finished.")
         self.task = None
-        print("Discord trigger stopped.")
+        self.logger.info(f"Discord trigger '{self.name}' stopped.")
 
-
-    def _load_discord_token(self) -> str | None:
-        """
-        Load the Discord bot token from the JSON configuration file.
-
-        Returns:
-            Discord bot token string, or None if loading fails.
-        """
-        if not os.path.exists(self.config_path):
-            print(f"Error: Config file not found: {self.config_path}")
-            return None
-
-        try:
-            with open(self.config_path, 'r') as f:
-                config = json.load(f)
-
-            token = config.get('discord_bot_token') # Use .get for safer access
-            if not token:
-                print(f"Error: 'discord_bot_token' missing or empty in config file: {self.config_path}")
-                return None
-            return token
-        except json.JSONDecodeError:
-            print(f"Error: Could not decode JSON from config file: {self.config_path}")
-            return None
-        except Exception as e:
-            print(f"An unexpected error occurred loading the token: {e}")
-            return None
-
-
-    def _execute_ai_agent_async(self, query: str, callback) -> None:
-        """
-        Executes the AI agent in a separate thread and uses a callback
-        to return the result to the asyncio event loop.
-
-        Args:
-            query: Command or message from Discord.
-            callback: A function (like set_response) to call with the result.
-                      This callback must be thread-safe or scheduled correctly
-                      (e.g., using loop.call_soon_threadsafe).
-        """
-        try:
-            # Get the GPT handler (assuming it's thread-safe or creates new instances)
-            gpt_handler = get_gpt_handler()
-
-            # Run the potentially blocking call in the default executor (thread pool)
-            self.loop.run_in_executor(
-                None, # Use default executor
-                self._blocking_ai_call, # The function to run
-                gpt_handler, # Argument for the function
-                query, # Argument for the function
-                callback # Argument for the function
-            )
-        except Exception as e:
-            print(f"Error submitting AI task to executor: {e}")
-            # Immediately call back with an error indicator if submission fails
-            callback(None) # Or pass a specific error message/object
-
-    def _blocking_ai_call(self, gpt_handler, query, callback):
-        """
-        Synchronous wrapper for the AI call, intended to be run in a thread.
-        Calls the provided callback with the result.
-        """
-        try:
-            response = gpt_handler.ask_gpt_sync(query)
-            callback(response)
-        except Exception as e:
-            print(f"Error during AI agent execution in background thread: {e}")
-            callback(None) # Signal an error occurred
-
-
-# --- Main execution block (for standalone testing) ---
-if __name__ == '__main__':
-    async def main():
-        print("Initializing Discord Event Listener for standalone run...")
-        listener = DiscordEventListener()
-        # Initialization now also sets up the output_action
-        await listener.initialize()
-
-        if not listener.bot:
-             print("Listener initialization failed. Exiting.")
-             return
-
-        # Start the listener (which starts the bot)
-        listener_task = await listener.start()
-
-        if not listener_task:
-             print("Listener failed to start. Exiting.")
-             return
-
-        # Keep the main script alive until interrupted
-        print("Discord bot trigger is running. Press Ctrl+C to exit.")
-        try:
-            # Wait for the listener task to complete (e.g., on bot disconnect or error)
-            # or until KeyboardInterrupt
-            await listener_task
-        except KeyboardInterrupt:
-            print("\nCtrl+C received. Shutting down...")
-        except Exception as e:
-             print(f"\nAn unexpected error occurred in the main loop: {e}")
-        finally:
-            print("Stopping listener...")
-            await listener.stop()
-            print("Shutdown complete.")
-
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("Main execution interrupted.")
