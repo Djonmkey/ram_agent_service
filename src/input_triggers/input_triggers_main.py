@@ -4,39 +4,15 @@ import importlib
 import os
 import sys
 import json
-import logging # Added logging
+import logging
 from typing import List, Dict, Any, Optional, Type
 from pathlib import Path
 
-# --- BEGIN: Define Project Root ---
-# Determine the absolute path to the project root directory
-# Assumes this file is located at src/input_triggers/input_triggers_main.py
-# Goes up three levels: input_triggers_main.py -> input_triggers -> src -> project_root
-try:
-    # Resolve the path of the current file
-    current_file_path = Path(__file__).resolve()
-    # Navigate up three levels to get the project root
-    PROJECT_ROOT = current_file_path.parent.parent.parent
-except NameError:
-    # Fallback if __file__ is not defined (e.g., in interactive mode)
-    # Adjust this fallback if necessary based on how the script might be run
-    print("Warning: __file__ not defined, attempting fallback for PROJECT_ROOT.")
-    # Example fallback: Assumes script is run from the 'src' directory
-    PROJECT_ROOT = Path('.').resolve().parent
+# --- Removed PROJECT_ROOT and SRC_DIR definition ---
+# It's assumed that the main application entry point (e.g., main.py)
+# correctly configures sys.path so that imports relative to 'src' work.
 
-# Optional: Add src directory to sys.path if needed for imports within this module
-# This might already be handled by main.py, but can be added here for robustness
-SRC_DIR = PROJECT_ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    # Insert at index 1 (after the script's directory) to avoid potential conflicts
-    # if the script's directory needs priority for some reason.
-    # Or use insert(0, ...) if you want src to have the highest priority.
-    sys.path.insert(1, str(SRC_DIR))
-    print(f"Added SRC_DIR to sys.path: {SRC_DIR}") # Optional: confirm path addition
-# --- END: Define Project Root ---
-
-
-# Now imports relative to src should work
+# Now imports relative to src should work if sys.path is configured correctly
 from input_triggers.input_triggers import InputTrigger
 from ras.chat_thread import get_gpt_handler
 
@@ -45,6 +21,43 @@ logger = logging.getLogger(__name__)
 # Configure basic logging if running standalone (though main app should configure)
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+
+# --- Helper Function to Get Project Root ---
+def _get_project_root() -> Path:
+    """
+    Determines the absolute path to the project root directory.
+    Assumes this file is located at src/input_triggers/input_triggers_main.py
+    Goes up three levels: input_triggers_main.py -> input_triggers -> src -> project_root
+    """
+    try:
+        # Resolve the path of the current file
+        current_file_path = Path(__file__).resolve()
+        # Navigate up three levels to get the project root
+        project_root = current_file_path.parent.parent.parent
+        return project_root
+    except NameError:
+        # Fallback if __file__ is not defined (e.g., in interactive mode)
+        # This fallback is less reliable as it depends on the CWD.
+        logger.warning("Warning: __file__ not defined, attempting fallback for project root based on CWD.")
+        # Example fallback: Assumes script is run from the 'src' directory
+        # Adjust this if necessary based on how the script might be run without __file__
+        project_root = Path('.').resolve().parent # CWD/../
+        logger.warning(f"Using fallback project root: {project_root}")
+        return project_root
+
+def _resolve_path_relative_to_project_root(relative_path_str: str) -> Path:
+    """Resolves a path relative to the calculated project root."""
+    if not relative_path_str:
+        # Handle empty or None paths gracefully if necessary
+        raise ValueError("Cannot resolve an empty relative path.")
+    project_root = _get_project_root()
+    absolute_path = (project_root / relative_path_str).resolve()
+    # Optional: Add a check if the resolved path exists if needed here
+    # if not absolute_path.exists():
+    #     logger.warning(f"Resolved path does not exist: {absolute_path}")
+    return absolute_path
+# --- End Helper Functions ---
 
 
 # Dictionary to store loaded event listeners
@@ -80,6 +93,13 @@ def ask_gpt_async(prompt: str, agent_config_data: Dict[str, Any], callback=None)
 
 def _load_json_file(file_path: Path, description: str) -> Optional[Dict[str, Any]]:
     """Loads a JSON file with error handling and logging."""
+    # Note: file_path is now expected to be absolute before calling this function.
+    if not file_path.is_absolute():
+         logger.error(f"  ❌ Path provided to _load_json_file must be absolute: {file_path}")
+         # Or attempt to resolve it, but it's better to resolve earlier
+         # file_path = file_path.resolve() # Resolves relative to CWD if not absolute
+         return None
+
     if not file_path.exists():
         logger.error(f"  ❌ {description} file not found: {file_path}")
         return None
@@ -150,13 +170,17 @@ async def _load_and_initialize_single_trigger(
         logger.warning(f"  Skipping {trigger_index_str} ('{module_path_str_original}') for agent '{agent_name}' due to missing or invalid 'input_trigger_secrets_file'.")
         return False
 
-    # Construct absolute paths relative to project root
-    trigger_config_absolute_path = PROJECT_ROOT / trigger_config_relative_path
-    trigger_secrets_absolute_path = PROJECT_ROOT / trigger_secrets_relative_path
+    # --- Resolve paths relative to project root using the helper ---
+    try:
+        trigger_config_absolute_path = _resolve_path_relative_to_project_root(trigger_config_relative_path)
+        trigger_secrets_absolute_path = _resolve_path_relative_to_project_root(trigger_secrets_relative_path)
+    except (ValueError, Exception) as e:
+         logger.error(f"    ❌ ERROR: Could not resolve paths for {trigger_index_str} ('{module_path_str_original}') for agent '{agent_name}': {e}", exc_info=True)
+         return False
 
     logger.info(f"    {trigger_index_str}: Module '{module_path_str_original}' (Import Path: '{module_path_for_import}')")
-    logger.info(f"      Config Path: {trigger_config_absolute_path}")
-    logger.info(f"      Secrets Path: {trigger_secrets_absolute_path}")
+    logger.info(f"      Config Path (Resolved): {trigger_config_absolute_path}")
+    logger.info(f"      Secrets Path (Resolved): {trigger_secrets_absolute_path}")
 
     # --- Load Trigger-Specific Config and Secrets ---
     trigger_config_data = _load_json_file(trigger_config_absolute_path, f"{trigger_index_str} Config")
@@ -263,11 +287,15 @@ async def load_input_triggers(agent_manifest_data: Dict[str, Any]):
             logger.warning(f"Agent '{agent_name}' is missing the 'agent_config_file' key in the manifest. Skipping.")
             continue
 
-        # Construct absolute path relative to the project root
-        config_file_absolute = PROJECT_ROOT / config_file_relative
+        # --- Resolve agent config path relative to project root ---
+        try:
+            config_file_absolute = _resolve_path_relative_to_project_root(config_file_relative)
+        except (ValueError, Exception) as e:
+            logger.error(f"  ❌ ERROR: Could not resolve agent config path '{config_file_relative}' for agent '{agent_name}': {e}", exc_info=True)
+            continue # Skip this agent
 
         logger.info(f"\nProcessing Agent: '{agent_name}'")
-        logger.info(f"  Attempting to load agent config: {config_file_absolute}")
+        logger.info(f"  Attempting to load agent config (Resolved): {config_file_absolute}")
 
         # Load the agent-specific configuration JSON using the helper
         agent_config_data = _load_json_file(config_file_absolute, f"Agent '{agent_name}' Config")
@@ -424,3 +452,4 @@ if __name__ == "__main__":
     # You could potentially load a dummy manifest here for testing if needed:
     # dummy_manifest = {"agents": [...]}
     # asyncio.run(main(dummy_manifest))
+
