@@ -127,27 +127,34 @@ async def _load_and_initialize_single_trigger(
         logger.warning(f"  Skipping {trigger_index_str} for agent '{agent_name}' - item in 'input_triggers' is not a dictionary.")
         return False
 
-    module_path_str = trigger_info.get("python_code_module")
-    if not module_path_str or not isinstance(module_path_str, str):
+    module_path_str_original = trigger_info.get("python_code_module")
+    if not module_path_str_original or not isinstance(module_path_str_original, str):
         logger.warning(f"  Skipping {trigger_index_str} for agent '{agent_name}' due to missing or invalid 'python_code_module'.")
         return False
+
+    # --- Convert file path to Python import path ---
+    module_path_for_import = module_path_str_original
+    if module_path_for_import.endswith(".py"):
+        module_path_for_import = module_path_for_import[:-3] # Remove .py extension
+    # Replace OS-specific separators (like / or \) with dots
+    module_path_for_import = module_path_for_import.replace(os.path.sep, '.')
 
     # --- Get Trigger-Specific Config and Secrets Paths ---
     trigger_config_relative_path = trigger_info.get("input_trigger_config_file")
     if not trigger_config_relative_path or not isinstance(trigger_config_relative_path, str):
-        logger.warning(f"  Skipping {trigger_index_str} ('{module_path_str}') for agent '{agent_name}' due to missing or invalid 'input_trigger_config_file'.")
+        logger.warning(f"  Skipping {trigger_index_str} ('{module_path_str_original}') for agent '{agent_name}' due to missing or invalid 'input_trigger_config_file'.")
         return False
 
     trigger_secrets_relative_path = trigger_info.get("input_trigger_secrets_file")
     if not trigger_secrets_relative_path or not isinstance(trigger_secrets_relative_path, str):
-        logger.warning(f"  Skipping {trigger_index_str} ('{module_path_str}') for agent '{agent_name}' due to missing or invalid 'input_trigger_secrets_file'.")
+        logger.warning(f"  Skipping {trigger_index_str} ('{module_path_str_original}') for agent '{agent_name}' due to missing or invalid 'input_trigger_secrets_file'.")
         return False
 
     # Construct absolute paths relative to project root
     trigger_config_absolute_path = PROJECT_ROOT / trigger_config_relative_path
     trigger_secrets_absolute_path = PROJECT_ROOT / trigger_secrets_relative_path
 
-    logger.info(f"    {trigger_index_str}: Module '{module_path_str}'")
+    logger.info(f"    {trigger_index_str}: Module '{module_path_str_original}' (Import Path: '{module_path_for_import}')")
     logger.info(f"      Config Path: {trigger_config_absolute_path}")
     logger.info(f"      Secrets Path: {trigger_secrets_absolute_path}")
 
@@ -161,9 +168,10 @@ async def _load_and_initialize_single_trigger(
         return False # Error already logged by _load_json_file
 
     # --- Import Module and Find Class ---
-    logger.info(f"    Attempting to load trigger module: {module_path_str}")
+    logger.info(f"    Attempting to import trigger module: {module_path_for_import}")
     try:
-        module = importlib.import_module(module_path_str)
+        # Use the converted import path
+        module = importlib.import_module(module_path_for_import)
         input_trigger_class: Optional[Type[InputTrigger]] = None
         for attr_name in dir(module):
             try:
@@ -179,10 +187,10 @@ async def _load_and_initialize_single_trigger(
                     break
             except Exception as inner_e:
                 # Log potential issues inspecting attributes but continue searching
-                logger.warning(f"      Warning: Error inspecting attribute '{attr_name}' in module {module_path_str}: {inner_e}")
+                logger.warning(f"      Warning: Error inspecting attribute '{attr_name}' in module {module_path_for_import}: {inner_e}")
 
         if not input_trigger_class:
-            logger.error(f"    ❌ ERROR: No concrete InputTrigger subclass found in module {module_path_str}.")
+            logger.error(f"    ❌ ERROR: No concrete InputTrigger subclass found in module {module_path_for_import}.")
             return False
 
         # --- Instantiate the listener class with specific config and secrets ---
@@ -217,10 +225,11 @@ async def _load_and_initialize_single_trigger(
             return False
 
     except (ImportError, ModuleNotFoundError) as e:
-        logger.error(f"    ❌ ERROR: Could not import trigger module '{module_path_str}': {e}", exc_info=True)
+        # Log the import path that failed
+        logger.error(f"    ❌ ERROR: Could not import trigger module '{module_path_for_import}': {e}", exc_info=True)
         return False
     except Exception as e:
-         logger.error(f"    ❌ ERROR: Unexpected error processing trigger module '{module_path_str}': {e}", exc_info=True)
+         logger.error(f"    ❌ ERROR: Unexpected error processing trigger module '{module_path_for_import}': {e}", exc_info=True)
          return False
 
 
