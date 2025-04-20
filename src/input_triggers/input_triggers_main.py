@@ -7,6 +7,7 @@ import json
 import logging
 from typing import List, Dict, Any, Optional, Type
 from pathlib import Path
+import pathlib
 
 # --- Removed PROJECT_ROOT and SRC_DIR definition ---
 # It's assumed that the main application entry point (e.g., main.py)
@@ -22,6 +23,9 @@ logger = logging.getLogger(__name__)
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
+# (Assuming PROJECT_ROOT_PATH is defined elsewhere, e.g., at the module level)
+# Example definition:
+PROJECT_ROOT_PATH = pathlib.Path(__file__).resolve().parent.parent.parent # Adjust based on actual project structure
 
 # --- Helper Function to Get Project Root ---
 def _get_project_root() -> Path:
@@ -46,18 +50,35 @@ def _get_project_root() -> Path:
         logger.warning(f"Using fallback project root: {project_root}")
         return project_root
 
-def _resolve_path_relative_to_project_root(relative_path_str: str) -> Path:
-    """Resolves a path relative to the calculated project root."""
-    if not relative_path_str:
-        # Handle empty or None paths gracefully if necessary
-        raise ValueError("Cannot resolve an empty relative path.")
-    project_root = _get_project_root()
+def _resolve_path_relative_to_project_root(relative_path_str: str) -> str:
+    """Resolves a relative path string to an absolute path string relative to the project root.
+
+    Args:
+        relative_path_str: The relative path as a string (e.g., "data/input.csv").
+
+    Returns:
+        The absolute path as a string.
+
+    Raises:
+        FileNotFoundError: If the resolved path does not exist.
+        TypeError: If relative_path_str is not a string.
+    """
+    if not isinstance(relative_path_str, str):
+        raise TypeError(f"Expected a string for relative_path_str, but got {type(relative_path_str)}")
+
+    # Ensure PROJECT_ROOT_PATH is a Path object
+    project_root = pathlib.Path(PROJECT_ROOT_PATH)
+
+    # Create a Path object from the relative string and resolve it
+    # Use the / operator for joining paths, which is idiomatic for pathlib
     absolute_path = (project_root / relative_path_str).resolve()
-    # Optional: Add a check if the resolved path exists if needed here
-    # if not absolute_path.exists():
-    #     logger.warning(f"Resolved path does not exist: {absolute_path}")
-    return absolute_path
-# --- End Helper Functions ---
+
+    # Check if the file/directory exists
+    if not absolute_path.exists():
+        raise FileNotFoundError(f"Resolved path does not exist: {absolute_path}")
+
+    # Convert the Path object to a string before returning
+    return str(absolute_path)
 
 
 # Dictionary to store loaded event listeners
@@ -91,34 +112,53 @@ def ask_gpt_async(prompt: str, agent_config_data: Dict[str, Any], callback=None)
     gpt_handler.ask_gpt(prompt, callback)
 
 
-def _load_json_file(file_path: Path, description: str) -> Optional[Dict[str, Any]]:
-    """Loads a JSON file with error handling and logging."""
-    # Note: file_path is now expected to be absolute before calling this function.
-    if not file_path.is_absolute():
-         logger.error(f"  ❌ Path provided to _load_json_file must be absolute: {file_path}")
-         # Or attempt to resolve it, but it's better to resolve earlier
-         # file_path = file_path.resolve() # Resolves relative to CWD if not absolute
-         return None
+def _load_json_file(file_path_str: str, description: str) -> Optional[Dict[str, Any]]:
+    """Loads a JSON file with error handling and logging.
 
-    if not file_path.exists():
-        logger.error(f"  ❌ {description} file not found: {file_path}")
-        return None
-    if not file_path.is_file():
-        logger.error(f"  ❌ {description} path is not a file: {file_path}")
-        return None
+    Args:
+        file_path_str: The absolute path to the JSON file as a string.
+        description: A description of the file being loaded (for logging).
+
+    Returns:
+        A dictionary containing the loaded JSON data, or None if an error occurred.
+    """
     try:
+        # --- Convert the input string path to a Path object ---
+        file_path = Path(file_path_str)
+
+        # Note: The check for absolute path might be less critical now if
+        # _resolve_path_relative_to_project_root guarantees absoluteness,
+        # but keeping it can be a safety measure.
+        if not file_path.is_absolute():
+            logger.error(f"  ❌ Path provided to _load_json_file should be absolute, but received: {file_path_str}")
+            # Depending on requirements, you might want to resolve it here,
+            # but it's generally better if the caller provides an absolute path.
+            # file_path = file_path.resolve() # Resolves relative to CWD if not absolute
+            return None
+
+        if not file_path.exists():
+            logger.error(f"  ❌ {description} file not found: {file_path}")
+            return None
+        if not file_path.is_file():
+            logger.error(f"  ❌ {description} path is not a file: {file_path}")
+            return None
+
         with open(file_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         logger.info(f"  ✅ Successfully loaded {description} file: {file_path}")
         return data
     except json.JSONDecodeError as e:
-        logger.error(f"  ❌ ERROR: Failed to parse JSON from {description} file '{file_path}': {e}")
+        logger.error(f"  ❌ ERROR: Failed to parse JSON from {description} file '{file_path_str}': {e}")
         return None
     except IOError as e:
-        logger.error(f"  ❌ ERROR: Could not read {description} file '{file_path}': {e}")
+        logger.error(f"  ❌ ERROR: Could not read {description} file '{file_path_str}': {e}")
+        return None
+    except TypeError as e: # Catch potential errors if file_path_str isn't a string-like object for Path()
+        logger.error(f"  ❌ ERROR: Invalid path type provided for {description}: {type(file_path_str)}. Error: {e}")
         return None
     except Exception as e:
-        logger.error(f"  ❌ ERROR: An unexpected error occurred loading {description} file '{file_path}': {e}", exc_info=True)
+        # Use file_path_str in the log message as file_path might not be defined if Path() failed
+        logger.error(f"  ❌ ERROR: An unexpected error occurred loading {description} file '{file_path_str}': {e}", exc_info=True)
         return None
 
 
@@ -223,7 +263,7 @@ async def _load_and_initialize_single_trigger(
             listener = input_trigger_class(
                 agent_config_data=agent_config_data, # Pass the whole agent config
                 trigger_config_data=trigger_config_data,
-                trigger_secrets=trigger_secrets_data
+                trigger_secrets=trigger_secrets_data.get("secrets", {})
             )
 
             # Unique listener name for the global dictionary
@@ -443,13 +483,23 @@ async def main(agent_manifest_data: Dict[str, Any]): # Manifest is now required
         logger.info("Initiating listener shutdown...")
         await stop_event_listeners()
 
-# Example of direct usage (less likely now it's called from elsewhere)
-if __name__ == "__main__":
-    # Basic logging setup for direct execution testing
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    logger.error("Running input_triggers_main directly is not supported with the new manifest-driven loading.")
-    logger.error("Please run the main application entry point (e.g., ras/main.py) which provides the manifest.")
-    # You could potentially load a dummy manifest here for testing if needed:
-    # dummy_manifest = {"agents": [...]}
-    # asyncio.run(main(dummy_manifest))
+# Example Usage (optional, for demonstration):
+if __name__ == '__main__':
+    try:
+        # Assuming a file 'README.md' exists at the project root for this example
+        readme_path_str = _resolve_path_relative_to_project_root("README.md")
+        print(f"Resolved path (string): {readme_path_str}")
+        print(f"Type: {type(readme_path_str)}")
 
+        # Example of a non-existent file
+        # non_existent_path = _resolve_path_relative_to_project_root("non_existent_file.txt")
+        # print(non_existent_path)
+
+        # Example of incorrect input type
+        # invalid_input = _resolve_path_relative_to_project_root(123)
+        # print(invalid_input)
+
+    except (FileNotFoundError, TypeError) as e:
+        print(f"Error: {e}")
+    except NameError:
+         print("Error: PROJECT_ROOT_PATH is not defined correctly for the example usage.")
