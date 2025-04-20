@@ -26,7 +26,7 @@ except ImportError as e:
     print("Please ensure input_triggers_main.py exists in src/input_triggers and src is in sys.path.")
     sys.exit(1)
 
-from .gpt_thread import get_gpt_handler
+from .chat_thread import get_gpt_handler
 
 # --- Globals moved from main.py ---
 # log_directory will be set by initialize_input_triggers

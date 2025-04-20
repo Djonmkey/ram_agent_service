@@ -25,7 +25,7 @@ if str(SRC_DIR) not in sys.path:
 # Now imports relative to src should work everywhere
 from ras.start_tools_and_data import on_startup_dispatcher # Use explicit relative or absolute
 from ras.start_input_triggers import initialize_input_triggers # Use explicit relative or absolute
-from .gpt_thread import get_gpt_handler
+from .chat_thread import get_gpt_handler
 
 
 # Global variables

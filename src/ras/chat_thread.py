@@ -18,7 +18,7 @@ class GPTRequest:
 class GPTThreadHandler:
     """Handles GPT requests on a separate thread."""
     
-    def __init__(self):
+    def __init__(self, agent_manifest_data: Dict[str, Any]):
         # Load config from gpt.json
         with open("event_listeners/gpt.json", "r") as f:
             config = json.load(f)

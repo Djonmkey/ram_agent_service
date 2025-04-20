@@ -23,7 +23,7 @@ from pathlib import Path
 
 # Now imports relative to src should work (because main.py added src to sys.path)
 from input_triggers.input_triggers import InputTrigger
-from ras.gpt_thread import get_gpt_handler
+from ras.chat_thread import get_gpt_handler
 
 # Dictionary to store loaded event listeners
 listeners: Dict[str, InputTrigger] = {}
