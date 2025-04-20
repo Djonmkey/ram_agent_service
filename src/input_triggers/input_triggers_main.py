@@ -7,21 +7,35 @@ import json
 from typing import List, Dict, Any, Optional, Type
 from pathlib import Path
 
-# --- REMOVE OR COMMENT OUT THIS BLOCK ---
-# # Determine the absolute path to the 'src' directory
-# # Assumes this file is located at src/input_triggers/input_triggers_main.py
-# # Goes up two levels: input_triggers -> src
-# SRC_DIR = Path(__file__).resolve().parent.parent
-# PROJECT_ROOT = SRC_DIR.parent # Define project root for resolving relative paths
+# --- BEGIN: Define Project Root ---
+# Determine the absolute path to the project root directory
+# Assumes this file is located at src/input_triggers/input_triggers_main.py
+# Goes up three levels: input_triggers_main.py -> input_triggers -> src -> project_root
+try:
+    # Resolve the path of the current file
+    current_file_path = Path(__file__).resolve()
+    # Navigate up three levels to get the project root
+    PROJECT_ROOT = current_file_path.parent.parent.parent
+except NameError:
+    # Fallback if __file__ is not defined (e.g., in interactive mode)
+    # Adjust this fallback if necessary based on how the script might be run
+    print("Warning: __file__ not defined, attempting fallback for PROJECT_ROOT.")
+    # Example fallback: Assumes script is run from the 'src' directory
+    PROJECT_ROOT = Path('.').resolve().parent
 
-# # Add src directory to sys.path to ensure imports work correctly,
-# # especially for dynamically loaded modules. Insert at the beginning
-# # to prioritize it.
-# if str(SRC_DIR) not in sys.path:
-#     sys.path.insert(0, str(SRC_DIR))
-# --- END REMOVE OR COMMENT OUT ---
+# Optional: Add src directory to sys.path if needed for imports within this module
+# This might already be handled by main.py, but can be added here for robustness
+SRC_DIR = PROJECT_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    # Insert at index 1 (after the script's directory) to avoid potential conflicts
+    # if the script's directory needs priority for some reason.
+    # Or use insert(0, ...) if you want src to have the highest priority.
+    sys.path.insert(1, str(SRC_DIR))
+    print(f"Added SRC_DIR to sys.path: {SRC_DIR}") # Optional: confirm path addition
+# --- END: Define Project Root ---
 
-# Now imports relative to src should work (because main.py added src to sys.path)
+
+# Now imports relative to src should work
 from input_triggers.input_triggers import InputTrigger
 from ras.chat_thread import get_gpt_handler
 
