@@ -10,9 +10,10 @@ import time
 # import queue # Removed queue as it's no longer used here
 import argparse
 
-from startup import on_startup_dispatcher
+# Use a relative import for startup since it's in the same directory
+from .startup import on_startup_dispatcher
 # Import the new initialization function
-from start_input_triggers import initialize_input_triggers
+from .start_input_triggers import initialize_input_triggers # Also make this relative
 
 # Add the event_listeners directory to the path - Still needed for gpt_thread potentially?
 # Let's keep it for now, but it might be removable if gpt_thread finds its files relatively.
@@ -21,6 +22,9 @@ if event_listeners_dir not in sys.path:
     sys.path.append(event_listeners_dir)
 
 # Import the GPT handler - Still needed for shutdown
+# Keep this as is for now, assuming gpt_thread might be found via sys.path additions elsewhere
+# or if it's intended to be imported differently. If gpt_thread.py is also in src/ras,
+# it should ideally be 'from .gpt_thread import get_gpt_handler'
 try:
     from gpt_thread import get_gpt_handler
 except ImportError as e:
@@ -214,3 +218,4 @@ if __name__ == "__main__":
 
     # --- UI Creation and mainloop Removed ---
     # TODO: Start HTTP service for UI
+
