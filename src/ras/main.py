@@ -85,12 +85,62 @@ if __name__ == "__main__":
 
     # --- End of Agent Manifest Loading ---
 
-    print("Executing MCP startup dispatcher...")
+    # --- Filter Agents based on 'enabled' flag ---
+    filtered_manifest_data = None
+    if agent_manifest_data:
+        original_agents = agent_manifest_data.get("agents")
+
+        if original_agents is None:
+            print("❌ ERROR: Manifest is missing the 'agents' list key.")
+            sys.exit(1)
+        elif not isinstance(original_agents, list):
+             print(f"❌ ERROR: Manifest 'agents' key is not a list (type: {type(original_agents).__name__}).")
+             sys.exit(1)
+        else:
+            enabled_agents = []
+            print("\nFiltering agents based on 'enabled' flag:")
+            for agent_config in original_agents:
+                # Ensure agent_config is a dictionary before proceeding
+                if not isinstance(agent_config, dict):
+                    print(f"  ⚠️ Skipping invalid agent entry (not a dictionary): {agent_config}")
+                    continue
+
+                agent_name = agent_config.get("name", "Unnamed Agent")
+                # Treat agent as enabled only if "enabled" key exists and is explicitly True
+                if agent_config.get("enabled") is True:
+                    print(f"  ✅ Enabling agent: {agent_name}")
+                    enabled_agents.append(agent_config)
+                else:
+                    # This covers cases where "enabled" is false, null, missing, or any other value
+                    print(f"  ➖ Skipping disabled agent: {agent_name}")
+
+            # Create a new manifest structure containing only the enabled agents,
+            # but preserving other top-level keys (like 'secrets').
+            filtered_manifest_data = agent_manifest_data.copy()
+            filtered_manifest_data["agents"] = enabled_agents
+
+            if not enabled_agents:
+                print("\n⚠️ No enabled agents found in the manifest. No input triggers will be started.")
+            else:
+                 print(f"\nProceeding with {len(enabled_agents)} enabled agent(s).")
+
+    else:
+        # This case should technically not be reached due to earlier exit calls,
+        # but added for robustness.
+        print("⚠️ Agent manifest data was not loaded. Cannot initialize triggers.")
+        sys.exit(1)
+    # --- End of Agent Filtering ---
+
+
+    print("\nExecuting MCP startup dispatcher...")
     try:
-        on_startup_dispatcher() # Pass agent_manifest_data if needed by dispatcher
+        # Pass the original manifest data to startup dispatcher, as it might need
+        # info about all potential commands/secrets, not just enabled agents.
+        # Adjust if startup dispatcher should only know about enabled agents.
+        on_startup_dispatcher()
         print("MCP startup dispatcher finished.")
     except Exception as e:
-        print(f"Error during MCP startup: {e}")
+        print(f"❌ Error during MCP startup: {e}")
         sys.exit(1) # Exit if startup fails
 
     # --- Initialize and start event listeners using the new function ---
@@ -99,22 +149,34 @@ if __name__ == "__main__":
     # Ensure the base log directory exists before starting listeners
     try:
         os.makedirs(abs_log_directory, exist_ok=True)
-        print(f"Base log directory ensured at: {abs_log_directory}")
+        print(f"\nBase log directory ensured at: {abs_log_directory}")
     except OSError as e:
-        print(f"Warning: Could not ensure base log directory {abs_log_directory}: {e}")
+        print(f"⚠️ Warning: Could not ensure base log directory {abs_log_directory}: {e}")
         # Continue execution, but logging might fail later
 
-    # Call the function from start_input_triggers.py
-    listener_thread = initialize_input_triggers(agent_manifest_data, abs_log_directory)
+    # Call the function from start_input_triggers.py with the FILTERED manifest data
+    listener_thread = None
+    if filtered_manifest_data and filtered_manifest_data.get("agents"):
+        listener_thread = initialize_input_triggers(filtered_manifest_data, abs_log_directory)
+    else:
+        print("Skipping input trigger initialization as there are no enabled agents.")
     # --- End of listener initialization ---
 
-    print("Main thread running. Event listeners started in background thread.")
+    print("\nMain thread running.")
+    if listener_thread:
+        print("Event listeners started in background thread for enabled agents.")
     print("Press Ctrl+C to exit.")
 
     # Keep the main thread alive, otherwise the daemon thread might exit prematurely
     try:
-        while listener_thread.is_alive():
-            listener_thread.join(timeout=1.0)
+        # Only join if the thread was actually started
+        if listener_thread:
+            while listener_thread.is_alive():
+                listener_thread.join(timeout=1.0)
+        else:
+            # If no listeners started, just wait for KeyboardInterrupt
+            while True:
+                time.sleep(1)
     except KeyboardInterrupt:
         print("\nCtrl+C received. Shutting down...")
         # Add any necessary cleanup for listeners or GPT handler here
@@ -128,10 +190,11 @@ if __name__ == "__main__":
 
         # Signal event listeners to stop if they have a mechanism for it
         # (Currently, they run until completion or error - asyncio loop cancellation might be needed)
-        print("Waiting for listener thread to finish...")
-        listener_thread.join(timeout=5.0) # Wait a bit longer
-        if listener_thread.is_alive():
-             print("Warning: Listener thread did not exit cleanly.")
+        if listener_thread:
+            print("Waiting for listener thread to finish...")
+            listener_thread.join(timeout=5.0) # Wait a bit longer
+            if listener_thread.is_alive():
+                 print("Warning: Listener thread did not exit cleanly.")
 
         print("Shutdown complete.")
     except Exception as e:
@@ -146,7 +209,7 @@ if __name__ == "__main__":
             print(f"Error during GPT handler shutdown after main loop error: {shutdown_e}")
          sys.exit(1) # Exit with error status
 
-    print("Application finished.") # Add a final message
+    print("\nApplication finished.") # Add a final message
     sys.exit(0) # Explicitly exit with success code
 
     # --- UI Creation and mainloop Removed ---
