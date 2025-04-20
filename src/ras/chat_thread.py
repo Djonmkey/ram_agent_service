@@ -19,20 +19,31 @@ class GPTThreadHandler:
     """Handles GPT requests on a separate thread."""
     
     def __init__(self, agent_config_data: Dict[str, Any]):
-        # Load config from gpt.json
-        with open("event_listeners/gpt.json", "r") as f:
+        # Load config
+        chat_model_config = agent_config_data["chat_model"]
+        chat_model_config_file = chat_model_config["chat_model_config_file"]
+        chat_model_secrets_file = chat_model_config["chat_model_secrets_file"]
+        chat_system_instructions_file = chat_model_config["chat_system_instructions_file"]
+        
+        # Load config from chat_model_config_file
+        with open(chat_model_config_file, "r") as f:
             config = json.load(f)
-            self.api_key = config["api_key"]
             self.model = config["model"]
             self.temperature = config.get("temperature", 0.7)
             self.max_tokens = config.get("max_tokens", 1000)
+
+        # Load config from chat_model_config_file
+        with open(chat_model_secrets_file, "r") as f:
+            config = json.load(f)
+            self.api_key = config["api_key"]
         
         # Load base system instructions
-        with open("event_listeners/gpt_system_instructions.txt", "r") as f:
+        with open(chat_system_instructions_file, "r") as f:
             base_instructions = f.read()
 
         # Load available MCP commands
-        command_data_path = agent_config_data.get("mcp_commands_config_file")
+        tools_and_data = agent_config_data["tools_and_data"]
+        command_data_path = tools_and_data.get("mcp_commands_config_file")
 
         with open(command_data_path, "r") as f:
             command_data = json.load(f)
