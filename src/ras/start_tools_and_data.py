@@ -1,15 +1,8 @@
 import os
 import sys
 import json
-from constants import MCP_COMMANDS_PATH, MCP_SECRETS_PATH
 
-def on_startup_dispatcher():
-    with open(MCP_COMMANDS_PATH, "r") as f:
-        command_data = json.load(f)
-
-    with open(MCP_SECRETS_PATH, "r") as f:
-        secrets = json.load(f)
-
+def start_mcp_commands(command_data, secrets):
     common_params = secrets.get("common", {})
 
     for cmd in command_data["mcp_commands"]:
@@ -53,3 +46,19 @@ def on_startup_dispatcher():
 
         except Exception as e:
             print(f"❌ Error importing or executing {module_path}: {e}")
+
+
+
+def on_startup_dispatcher(agent_manifest_data):
+    for agent in agent_manifest_data["agents"]:
+        command_data = None
+        secrets = None
+
+        # TODO: load agent_config_file 
+        # TODO: load the mcp_commands_config_file from the agent_config_file into the command_data variable.
+        # TODO: load the mcp_commands_secrets_file from  the agent_config_file into the secrets
+
+        start_mcp_commands(command_data, secrets)
+
+
+    

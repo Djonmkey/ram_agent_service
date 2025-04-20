@@ -11,7 +11,7 @@ import time
 import argparse
 
 # Use a relative import for startup since it's in the same directory
-from .startup import on_startup_dispatcher
+from .start_tools_and_data import on_startup_dispatcher
 # Import the new initialization function
 from .start_input_triggers import initialize_input_triggers # Also make this relative
 
@@ -141,7 +141,7 @@ if __name__ == "__main__":
         # Pass the original manifest data to startup dispatcher, as it might need
         # info about all potential commands/secrets, not just enabled agents.
         # Adjust if startup dispatcher should only know about enabled agents.
-        on_startup_dispatcher()
+        on_startup_dispatcher(agent_manifest_data)
         print("MCP startup dispatcher finished.")
     except Exception as e:
         print(f"❌ Error during MCP startup: {e}")
