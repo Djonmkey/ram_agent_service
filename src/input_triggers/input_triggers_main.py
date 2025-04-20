@@ -3,25 +3,27 @@ import asyncio
 import importlib
 import os
 import sys
-import json # Added for loading agent configs
+import json
 from typing import List, Dict, Any, Optional, Type
-from pathlib import Path # Use pathlib for better path manipulation
+from pathlib import Path
 
-# Determine the absolute path to the 'src' directory
-# Assumes this file is located at src/input_triggers/input_triggers_main.py
-# Goes up two levels: input_triggers -> src
-SRC_DIR = Path(__file__).resolve().parent.parent
-PROJECT_ROOT = SRC_DIR.parent # Define project root for resolving relative paths
+# --- REMOVE OR COMMENT OUT THIS BLOCK ---
+# # Determine the absolute path to the 'src' directory
+# # Assumes this file is located at src/input_triggers/input_triggers_main.py
+# # Goes up two levels: input_triggers -> src
+# SRC_DIR = Path(__file__).resolve().parent.parent
+# PROJECT_ROOT = SRC_DIR.parent # Define project root for resolving relative paths
 
-# Add src directory to sys.path to ensure imports work correctly,
-# especially for dynamically loaded modules. Insert at the beginning
-# to prioritize it.
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+# # Add src directory to sys.path to ensure imports work correctly,
+# # especially for dynamically loaded modules. Insert at the beginning
+# # to prioritize it.
+# if str(SRC_DIR) not in sys.path:
+#     sys.path.insert(0, str(SRC_DIR))
+# --- END REMOVE OR COMMENT OUT ---
 
-# Now imports relative to src should work
-from input_triggers.input_triggers import InputTrigger # Adjusted import path
-from gpt_thread import get_gpt_handler
+# Now imports relative to src should work (because main.py added src to sys.path)
+from input_triggers.input_triggers import InputTrigger
+from ras.gpt_thread import get_gpt_handler
 
 # Dictionary to store loaded event listeners
 listeners: Dict[str, InputTrigger] = {}

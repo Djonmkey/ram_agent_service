@@ -5,46 +5,33 @@ import sys
 import json
 from datetime import datetime
 import threading
-from pathlib import Path
+from pathlib import Path # <-- Make sure pathlib is imported
 import time
-# import queue # Removed queue as it's no longer used here
 import argparse
 
-# Use a relative import for startup since it's in the same directory
-from .start_tools_and_data import on_startup_dispatcher
-# Import the new initialization function
-from .start_input_triggers import initialize_input_triggers # Also make this relative
+# --- BEGIN: Add src directory to sys.path ---
+# Determine the absolute path to the 'src' directory
+# Assumes this file is located at src/ras/main.py
+# Goes up one level: ras -> src
+SRC_DIR = Path(__file__).resolve().parent.parent
 
-# Add the event_listeners directory to the path - Still needed for gpt_thread potentially?
-# Let's keep it for now, but it might be removable if gpt_thread finds its files relatively.
-event_listeners_dir = os.path.join(os.path.dirname(__file__), 'event_listeners')
-if event_listeners_dir not in sys.path:
-    sys.path.append(event_listeners_dir)
+# Add src directory to sys.path to ensure imports work correctly
+# across the application modules. Insert at the beginning
+# to prioritize it.
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+# --- END: Add src directory to sys.path ---
 
-# Import the GPT handler - Still needed for shutdown
-# Keep this as is for now, assuming gpt_thread might be found via sys.path additions elsewhere
-# or if it's intended to be imported differently. If gpt_thread.py is also in src/ras,
-# it should ideally be 'from .gpt_thread import get_gpt_handler'
-try:
-    from gpt_thread import get_gpt_handler
-except ImportError as e:
-    print(f"Error importing from gpt_thread: {e}")
-    print("Please ensure gpt_thread.py exists and is accessible.")
-    sys.exit(1)
+# Now imports relative to src should work everywhere
+from ras.start_tools_and_data import on_startup_dispatcher # Use explicit relative or absolute
+from ras.start_input_triggers import initialize_input_triggers # Use explicit relative or absolute
+from .gpt_thread import get_gpt_handler
+
 
 # Global variables
 # Keep log_directory definition here as it's based on main.py's location
 log_directory = os.path.join(os.path.dirname(__file__), 'logs')
 # current_conversations moved to start_input_triggers.py
-
-# --- ConversationLogger class removed ---
-
-# --- patch_gpt_handler function removed ---
-
-# --- run_event_listeners function removed ---
-
-# --- start_event_listeners_thread function removed ---
-
 
 if __name__ == "__main__":
     # --- Agent Manifest Loading ---

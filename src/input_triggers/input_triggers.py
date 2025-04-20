@@ -21,12 +21,7 @@ DEFAULT_MCP_COMMANDS_PATH = SRC_DIR / "mcp_commands" / "commands.json"
 DEFAULT_MCP_SECRETS_PATH = SRC_DIR / "mcp_commands" / "secrets.json"
 DEFAULT_MCP_MODULES_DIR = SRC_DIR / "mcp_commands"
 
-# Import GPT handler safely
-try:
-    from gpt_thread import get_gpt_handler
-except ImportError:
-    print("Warning: Could not import get_gpt_handler. AI agent functionality will be limited.")
-    get_gpt_handler = None # type: ignore
+from ras.gpt_thread import get_gpt_handler
 
 
 class InputTrigger(ABC):
