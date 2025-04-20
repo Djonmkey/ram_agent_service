@@ -49,16 +49,47 @@ def start_mcp_commands(command_data, secrets):
 
 
 
-def on_startup_dispatcher(agent_manifest_data):
+def on_startup_dispatcher(agent_manifest_data: dict) -> None:
+    """
+    Dispatch startup routines for each enabled agent in the manifest by loading
+    their configuration and initializing startup MCP commands.
+
+    :param agent_manifest_data: Parsed JSON from agent_manifest.json
+    """
     for agent in agent_manifest_data["agents"]:
-        command_data = None
-        secrets = None
+        if not agent.get("enabled", False):
+            continue
 
-        # TODO: load agent_config_file 
-        # TODO: load the mcp_commands_config_file from the agent_config_file into the command_data variable.
-        # TODO: load the mcp_commands_secrets_file from  the agent_config_file into the secrets
+        agent_config_path = agent.get("agent_config_file")
+        if not agent_config_path:
+            print(f"⚠️ Skipping agent {agent.get('name')}: Missing agent_config_file")
+            continue
 
-        start_mcp_commands(command_data, secrets)
+        try:
+            # Load the agent config file
+            with open(agent_config_path, "r", encoding="utf-8") as f:
+                agent_config = json.load(f)
+
+            # Load the command config and secrets files
+            command_data_path = agent_config.get("mcp_commands_config_file")
+            secrets_data_path = agent_config.get("mcp_commands_secrets_file")
+
+            if not command_data_path or not secrets_data_path:
+                print(f"⚠️ Skipping agent {agent.get('name')}: Missing config or secrets file path in agent config.")
+                continue
+
+            with open(command_data_path, "r", encoding="utf-8") as f:
+                command_data = json.load(f)
+
+            with open(secrets_data_path, "r", encoding="utf-8") as f:
+                secrets = json.load(f)
+
+            print(f"🚀 Starting agent: {agent['name']}")
+            start_mcp_commands(command_data, secrets)
+
+        except Exception as e:
+            print(f"❌ Failed to initialize agent {agent.get('name')}: {e}")
+
 
 
     
