@@ -51,7 +51,7 @@ def ask_gpt_async(prompt: str, callback=None):
 
 # --- discover_event_listeners function removed ---
 
-async def load_event_listeners(agent_manifest_data: Dict[str, Any]):
+async def load_input_triggers(agent_manifest_data: Dict[str, Any]):
     """
     Load and initialize input triggers specified in agent configuration files
     listed in the agent manifest.
@@ -141,7 +141,7 @@ async def load_event_listeners(agent_manifest_data: Dict[str, Any]):
                 module = importlib.import_module(module_path_str)
 
                 # Find the InputTrigger subclass within the module
-                listener_class = None
+                input_trigger_class = None
                 for attr_name in dir(module):
                     try:
                         attr = getattr(module, attr_name)
@@ -151,15 +151,15 @@ async def load_event_listeners(agent_manifest_data: Dict[str, Any]):
                             issubclass(attr, InputTrigger) and
                             attr is not InputTrigger and
                             not getattr(attr, '__abstractmethods__', False)): # Check if it's concrete
-                            listener_class = attr
-                            print(f"      Found listener class: {listener_class.__name__}")
+                            input_trigger_class = attr
+                            print(f"      Found listener class: {input_trigger_class.__name__}")
                             break # Found the first concrete subclass
                     except Exception as inner_e:
                         # Catch errors during attribute access/check within the module
                         print(f"      Warning: Error inspecting attribute '{attr_name}' in module {module_path_str}: {inner_e}")
 
 
-                if not listener_class:
+                if not input_trigger_class:
                     print(f"    ❌ ERROR: No concrete InputTrigger subclass found in module {module_path_str}.")
                     continue
 
@@ -169,11 +169,13 @@ async def load_event_listeners(agent_manifest_data: Dict[str, Any]):
                 try:
                     # Pass agent_config_data to the 'config_data' param of InputTrigger base
                     # Pass the full manifest to 'agent_manifest_data' (assuming subclasses handle this)
-                    listener = listener_class(
+                    listener = input_trigger_class(
                         config_data=agent_config_data, # Pass the specific agent config here
-                        agent_manifest_data=agent_manifest_data # Pass the full manifest
+                        agent_name=agent_name # Pass the full manifest
                     )
-                    listener_name = listener.name # Get name *after* instantiation
+
+                    # The listeners array element must contain a concatination of the agent name and the listerner.name because multple agents may use the same input trigger class.
+                    listener_name = agent_name + listener.name # Get name *after* instantiation
 
                     # Check for duplicate listener names across all agents
                     if listener_name in listeners:
@@ -181,7 +183,7 @@ async def load_event_listeners(agent_manifest_data: Dict[str, Any]):
                          # Consider alternative handling: rename, allow if different class, etc.
                          continue
 
-                    print(f"    Initializing '{listener_name}' ({listener_class.__name__})...")
+                    print(f"    Initializing '{listener_name}' ({input_trigger_class.__name__})...")
                     await listener.initialize()
                     listeners[listener_name] = listener
                     loaded_listener_count += 1
@@ -189,9 +191,9 @@ async def load_event_listeners(agent_manifest_data: Dict[str, Any]):
 
                 except TypeError as te:
                     # Catch if the listener __init__ doesn't accept the expected args
-                    print(f"    ❌ ERROR: Failed to instantiate {listener_class.__name__} (TypeError): {te}. Check its __init__ method signature (needs to accept config_data and agent_manifest_data).")
+                    print(f"    ❌ ERROR: Failed to instantiate {input_trigger_class.__name__} (TypeError): {te}. Check its __init__ method signature (needs to accept config_data and agent_manifest_data).")
                 except Exception as e:
-                    print(f"    ❌ ERROR: Failed to initialize {listener_class.__name__}: {e}")
+                    print(f"    ❌ ERROR: Failed to initialize {input_trigger_class.__name__}: {e}")
                     # Optionally, add more detailed error logging here (e.g., traceback)
 
             except (ImportError, ModuleNotFoundError) as e:
@@ -277,7 +279,7 @@ async def main(agent_manifest_data: Dict[str, Any]): # Manifest is now required
     """
     try:
         # Load listeners using the new manifest-driven logic
-        await load_event_listeners(agent_manifest_data) # Pass the manifest
+        await load_input_triggers(agent_manifest_data) # Pass the manifest
 
         # Start whatever listeners were successfully loaded
         await start_event_listeners()
