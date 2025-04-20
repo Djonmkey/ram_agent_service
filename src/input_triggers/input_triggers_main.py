@@ -3,6 +3,7 @@ import asyncio
 import importlib
 import os
 import sys
+import json # Added for loading agent configs
 from typing import List, Dict, Any, Optional, Type
 from pathlib import Path # Use pathlib for better path manipulation
 
@@ -48,112 +49,162 @@ def ask_gpt_async(prompt: str, callback=None):
     gpt_handler = get_gpt_handler()
     gpt_handler.ask_gpt(prompt, callback)
 
-def discover_event_listeners() -> List[Type[InputTrigger]]:
+# --- discover_event_listeners function removed ---
+
+async def load_event_listeners(agent_manifest_data: Dict[str, Any]):
     """
-    Discover and load all event listener implementations within the src directory.
+    Load and initialize input triggers specified in agent configuration files
+    listed in the agent manifest.
 
-    Returns:
-        A list of EventListener classes.
+    Args:
+        agent_manifest_data: Dictionary containing the loaded agent manifest data.
+                             Expected structure: {"agents": [{"name": "...", "agent_config_file": "path/to/config.json", ...}, ...]}
     """
-    listener_classes = []
-    src_path = SRC_DIR # Use the calculated SRC_DIR Path object
+    global listeners # Ensure we modify the global dict
+    listeners = {} # Clear any previous listeners
 
-    print(f"Searching for listeners starting from: {src_path}")
+    print("Loading input triggers based on agent manifest...")
 
-    # Walk through the src directory
-    for root, dirs, files in os.walk(src_path):
-        # Skip __pycache__ and hidden directories for efficiency
-        dirs[:] = [d for d in dirs if not d.startswith('__') and not d.startswith('.')]
+    if not agent_manifest_data or "agents" not in agent_manifest_data:
+        print("ERROR: Agent manifest data is missing or does not contain an 'agents' list.")
+        return
 
-        current_path = Path(root)
+    loaded_listener_count = 0
+    processed_agents = 0
 
-        for file in files:
-            file_path = current_path / file
-            # Skip non-Python files, __init__.py, and this file itself
-            if (not file.endswith('.py') or
-                file == '__init__.py' or
-                file_path.resolve() == Path(__file__).resolve()):
+    for agent_info in agent_manifest_data.get("agents", []):
+        processed_agents += 1
+        agent_name = agent_info.get("name", f"Agent_{processed_agents}") # Use name or generate one
+        config_file_relative = agent_info.get("agent_config_file")
+
+        if not config_file_relative:
+            print(f"WARNING: Agent '{agent_name}' is missing the 'agent_config_file' key in the manifest. Skipping.")
+            continue
+
+        # Construct absolute path relative to the project root (SRC_DIR.parent)
+        # Assumes paths in manifest like 'config/agents/...' are relative to the project root.
+        # Adjust if paths are relative to the manifest file location itself or SRC_DIR.
+        config_file_absolute = SRC_DIR.parent / config_file_relative
+
+        print(f"\nProcessing Agent: '{agent_name}'")
+        print(f"  Attempting to load agent config: {config_file_absolute}")
+
+        if not config_file_absolute.exists():
+            print(f"  ❌ ERROR: Agent config file not found: {config_file_absolute}")
+            continue
+        if not config_file_absolute.is_file():
+            print(f"  ❌ ERROR: Agent config path is not a file: {config_file_absolute}")
+            continue
+
+        # Load the agent-specific configuration JSON
+        try:
+            with open(config_file_absolute, 'r', encoding='utf-8') as f:
+                agent_config_data = json.load(f)
+            print(f"  ✅ Successfully loaded agent config for '{agent_name}'.")
+        except json.JSONDecodeError as e:
+            print(f"  ❌ ERROR: Failed to parse JSON from agent config file '{config_file_absolute}': {e}")
+            continue
+        except IOError as e:
+            print(f"  ❌ ERROR: Could not read agent config file '{config_file_absolute}': {e}")
+            continue
+        except Exception as e:
+            print(f"  ❌ ERROR: An unexpected error occurred loading agent config '{config_file_absolute}': {e}")
+            continue
+
+        # Load input triggers specified in this agent's config
+        input_triggers_list = agent_config_data.get("input_triggers", [])
+        if not isinstance(input_triggers_list, list):
+            print(f"  WARNING: 'input_triggers' in config for agent '{agent_name}' is not a list. Skipping triggers for this agent.")
+            continue
+
+        if not input_triggers_list:
+            print(f"  No 'input_triggers' found or list is empty in the config for agent '{agent_name}'.")
+            continue
+
+        print(f"  Found {len(input_triggers_list)} input trigger(s) specified for '{agent_name}'.")
+
+        for i, trigger_info in enumerate(input_triggers_list):
+            if not isinstance(trigger_info, dict):
+                print(f"  WARNING: Skipping trigger #{i+1} for agent '{agent_name}' - item in 'input_triggers' is not a dictionary.")
                 continue
 
-            # Calculate the module path relative to src_path
+            module_path_str = trigger_info.get("python_code_module")
+            if not module_path_str or not isinstance(module_path_str, str):
+                print(f"  WARNING: Skipping trigger #{i+1} for agent '{agent_name}' due to missing or invalid 'python_code_module'.")
+                continue
+
+            print(f"    Attempting to load trigger module: {module_path_str}")
+
             try:
-                # Get path relative to src_dir
-                relative_path = file_path.relative_to(src_path)
-                # Convert path separators to dots and remove .py extension
-                module_path_parts = list(relative_path.parts)
-                module_path_parts[-1] = module_path_parts[-1][:-3] # Remove .py
-                module_path = '.'.join(module_path_parts)
+                # Dynamically import the module
+                # Ensure sys.path includes SRC_DIR so imports like 'input_triggers.listeners.xyz' work
+                module = importlib.import_module(module_path_str)
 
-                # Skip if module path is empty (shouldn't happen with checks)
-                if not module_path:
-                    continue
-
-                # Dynamically import the module and look for EventListener subclasses
-                module = importlib.import_module(module_path)
+                # Find the InputTrigger subclass within the module
+                listener_class = None
                 for attr_name in dir(module):
                     try:
                         attr = getattr(module, attr_name)
-
-                        # Check if it's a class, a subclass of EventListener,
-                        # and not EventListener itself or an abstract class
+                        # Check if it's a class, a concrete subclass of InputTrigger,
+                        # and not InputTrigger itself.
                         if (isinstance(attr, type) and
                             issubclass(attr, InputTrigger) and
                             attr is not InputTrigger and
                             not getattr(attr, '__abstractmethods__', False)): # Check if it's concrete
-                            if attr not in listener_classes: # Avoid duplicates
-                                listener_classes.append(attr)
-                                print(f"  Discovered listener class: {attr.__name__} from {module_path}")
+                            listener_class = attr
+                            print(f"      Found listener class: {listener_class.__name__}")
+                            break # Found the first concrete subclass
                     except Exception as inner_e:
-                        # Catch errors during attribute access or checks within a module
-                        print(f"Warning: Error inspecting attribute '{attr_name}' in module {module_path}: {inner_e}")
+                        # Catch errors during attribute access/check within the module
+                        print(f"      Warning: Error inspecting attribute '{attr_name}' in module {module_path_str}: {inner_e}")
 
-            except (ImportError, AttributeError, ModuleNotFoundError) as e:
-                # Catch errors during module import
-                print(f"Warning: Could not import or process module {module_path}: {e}")
+
+                if not listener_class:
+                    print(f"    ❌ ERROR: No concrete InputTrigger subclass found in module {module_path_str}.")
+                    continue
+
+                # Instantiate the listener class
+                # Pass the specific agent's config data AND the overall manifest data
+                # Assumes listener __init__ accepts both config_data and agent_manifest_data
+                try:
+                    # Pass agent_config_data to the 'config_data' param of InputTrigger base
+                    # Pass the full manifest to 'agent_manifest_data' (assuming subclasses handle this)
+                    listener = listener_class(
+                        config_data=agent_config_data, # Pass the specific agent config here
+                        agent_manifest_data=agent_manifest_data # Pass the full manifest
+                    )
+                    listener_name = listener.name # Get name *after* instantiation
+
+                    # Check for duplicate listener names across all agents
+                    if listener_name in listeners:
+                         print(f"    ❌ ERROR: Duplicate listener name '{listener_name}' detected (from agent '{agent_name}'). Skipping this instance.")
+                         # Consider alternative handling: rename, allow if different class, etc.
+                         continue
+
+                    print(f"    Initializing '{listener_name}' ({listener_class.__name__})...")
+                    await listener.initialize()
+                    listeners[listener_name] = listener
+                    loaded_listener_count += 1
+                    print(f"    ✅ Successfully initialized '{listener_name}' for agent '{agent_name}'.")
+
+                except TypeError as te:
+                    # Catch if the listener __init__ doesn't accept the expected args
+                    print(f"    ❌ ERROR: Failed to instantiate {listener_class.__name__} (TypeError): {te}. Check its __init__ method signature (needs to accept config_data and agent_manifest_data).")
+                except Exception as e:
+                    print(f"    ❌ ERROR: Failed to initialize {listener_class.__name__}: {e}")
+                    # Optionally, add more detailed error logging here (e.g., traceback)
+
+            except (ImportError, ModuleNotFoundError) as e:
+                print(f"    ❌ ERROR: Could not import trigger module '{module_path_str}': {e}")
             except Exception as e:
-                 # Catch any other unexpected errors during file processing
-                 print(f"Error processing file {file_path}: {e}")
+                 print(f"    ❌ ERROR: Unexpected error processing trigger module '{module_path_str}': {e}")
 
-    return listener_classes
+    print(f"\nFinished processing {processed_agents} agent(s).")
+    if loaded_listener_count > 0:
+        print(f"✅ Successfully loaded and initialized {loaded_listener_count} input trigger(s) in total.")
+    else:
+        print("⚠️ No input triggers were successfully loaded.")
 
-async def load_event_listeners(agent_manifest_data: Optional[Dict[str, Any]] = None):
-    """
-    Load and initialize all discovered event listeners.
-
-    Args:
-        agent_manifest_data: Optional dictionary containing agent manifest data
-                             to be passed to listeners.
-    """
-    print("Discovering event listeners...")
-    listener_classes = discover_event_listeners()
-
-    if not listener_classes:
-        print("No concrete event listener implementations found.")
-        return
-
-    print(f"\nFound {len(listener_classes)} concrete event listener class(es).")
-
-    # Initialize each listener
-    for listener_class in listener_classes:
-        try:
-            # Pass agent_manifest_data to the listener's constructor
-            # Note: The InputTrigger base class and subclasses must be updated
-            #       to accept this argument in their __init__ method.
-            listener = listener_class(agent_manifest_data=agent_manifest_data) # Instantiate the class
-            listener_name = listener.name # Get name *after* instantiation
-            print(f"Initializing '{listener_name}' ({listener_class.__name__})...")
-            await listener.initialize()
-            listeners[listener_name] = listener
-            print(f"Successfully initialized '{listener_name}'.")
-        except TypeError as te:
-             # Catch if the listener __init__ doesn't accept the new arg
-             if 'agent_manifest_data' in str(te):
-                 print(f"ERROR: Failed to initialize {listener_class.__name__}: Its __init__ method might not accept 'agent_manifest_data'. {te}")
-             else:
-                 print(f"ERROR: Failed to initialize {listener_class.__name__} (TypeError): {te}")
-        except Exception as e:
-            print(f"ERROR: Failed to initialize {listener_class.__name__}: {e}")
-            # Optionally, add more detailed error logging here (e.g., traceback)
 
 async def start_event_listeners():
     """
@@ -216,17 +267,19 @@ async def stop_event_listeners():
             print(f"ERROR: An unexpected error occurred during listener shutdown: {e}")
 
 
-async def main(agent_manifest_data: Optional[Dict[str, Any]] = None):
+async def main(agent_manifest_data: Dict[str, Any]): # Manifest is now required
     """
     Main entry point for the input triggers system.
-    Loads, starts, and manages event listeners.
+    Loads, starts, and manages event listeners based on the agent manifest.
 
     Args:
-        agent_manifest_data: Optional dictionary containing agent manifest data.
+        agent_manifest_data: Dictionary containing agent manifest data.
     """
     try:
-        # Load and start all event listeners, passing the manifest data
-        await load_event_listeners(agent_manifest_data)
+        # Load listeners using the new manifest-driven logic
+        await load_event_listeners(agent_manifest_data) # Pass the manifest
+
+        # Start whatever listeners were successfully loaded
         await start_event_listeners()
 
         if not listeners:
@@ -258,11 +311,20 @@ async def main(agent_manifest_data: Optional[Dict[str, Any]] = None):
 
 # Example of direct usage (less likely now it's called from elsewhere)
 if __name__ == "__main__":
-    # Set up asyncio event loop and run the main function
-    # Note: Running directly won't pass agent_manifest_data unless added here
-    print("Warning: Running input_triggers_main directly. Agent manifest data will be None.")
-    try:
-        asyncio.run(main()) # Pass None or load manifest here if needed for direct run
-    except KeyboardInterrupt:
-        # This might catch a Ctrl+C before asyncio.run() fully handles it
-        print("\nShutdown initiated from __main__.")
+    print("ERROR: Running input_triggers_main directly is not supported with the new manifest-driven loading.")
+    print("Please run the main application entry point (e.g., ras/main.py) which provides the manifest.")
+    # Example of how it *might* be run with a dummy manifest for testing:
+    # print("Attempting direct run with dummy manifest for testing...")
+    # dummy_manifest_path = SRC_DIR.parent / "config" / "agent_manifest.json" # Adjust path as needed
+    # try:
+    #     with open(dummy_manifest_path, 'r') as f:
+    #         dummy_manifest = json.load(f)
+    #     asyncio.run(main(dummy_manifest))
+    # except FileNotFoundError:
+    #      print(f"ERROR: Dummy manifest file not found at {dummy_manifest_path}")
+    # except json.JSONDecodeError:
+    #      print(f"ERROR: Could not decode dummy manifest file at {dummy_manifest_path}")
+    # except KeyboardInterrupt:
+    #     print("\nShutdown initiated from __main__.")
+    # except Exception as e:
+    #      print(f"Error during direct run: {e}")
