@@ -7,7 +7,7 @@ import os
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Dict, Any, Optional
-from constants import MCP_COMMANDS_PATH
+
 
 class GPTRequest:
     """Represents a request to the GPT model."""
@@ -18,7 +18,7 @@ class GPTRequest:
 class GPTThreadHandler:
     """Handles GPT requests on a separate thread."""
     
-    def __init__(self, agent_manifest_data: Dict[str, Any]):
+    def __init__(self, agent_config_data: Dict[str, Any]):
         # Load config from gpt.json
         with open("event_listeners/gpt.json", "r") as f:
             config = json.load(f)
@@ -32,7 +32,9 @@ class GPTThreadHandler:
             base_instructions = f.read()
 
         # Load available MCP commands
-        with open(MCP_COMMANDS_PATH, "r") as f:
+        command_data_path = agent_config_data.get("mcp_commands_config_file")
+
+        with open(command_data_path, "r") as f:
             command_data = json.load(f)
 
         # Format MCP commands for GPT, including optional response format
@@ -226,9 +228,9 @@ class GPTThreadHandler:
 # Singleton instance
 _gpt_handler = None
 
-def get_gpt_handler() -> GPTThreadHandler:
+def get_gpt_handler(agent_config_data: Dict[str, Any]) -> GPTThreadHandler:
     """Get the singleton instance of the GPTThreadHandler."""
     global _gpt_handler
     if _gpt_handler is None:
-        _gpt_handler = GPTThreadHandler()
+        _gpt_handler = GPTThreadHandler(agent_config_data)
     return _gpt_handler

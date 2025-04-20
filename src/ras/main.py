@@ -25,8 +25,6 @@ if str(SRC_DIR) not in sys.path:
 # Now imports relative to src should work everywhere
 from ras.start_tools_and_data import on_startup_dispatcher # Use explicit relative or absolute
 from ras.start_input_triggers import initialize_input_triggers # Use explicit relative or absolute
-from .chat_thread import get_gpt_handler
-
 
 # Global variables
 # Keep log_directory definition here as it's based on main.py's location
@@ -39,7 +37,7 @@ if __name__ == "__main__":
     parser.add_argument(
         'manifest_file',
         nargs='?', # Makes the argument optional
-        default='config/agent_manifest.json', # Default value if not provided
+        default='../../config/agent_manifest.json', # Default value if not provided
         help='Path to the agent manifest JSON file (relative to main.py location).'
     )
     args = parser.parse_args()
@@ -170,14 +168,6 @@ if __name__ == "__main__":
                 time.sleep(1)
     except KeyboardInterrupt:
         print("\nCtrl+C received. Shutting down...")
-        # Add any necessary cleanup for listeners or GPT handler here
-        try:
-            gpt_handler = get_gpt_handler()
-            if gpt_handler:
-                 print("Shutting down GPT handler...")
-                 gpt_handler.shutdown()
-        except Exception as e:
-            print(f"Error during GPT handler shutdown: {e}")
 
         # Signal event listeners to stop if they have a mechanism for it
         # (Currently, they run until completion or error - asyncio loop cancellation might be needed)
@@ -191,13 +181,6 @@ if __name__ == "__main__":
     except Exception as e:
          print(f"\nAn unexpected error occurred in the main loop: {e}")
          # Perform similar shutdown procedures on unexpected errors
-         try:
-            gpt_handler = get_gpt_handler()
-            if gpt_handler:
-                 print("Shutting down GPT handler due to error...")
-                 gpt_handler.shutdown()
-         except Exception as shutdown_e:
-            print(f"Error during GPT handler shutdown after main loop error: {shutdown_e}")
          sys.exit(1) # Exit with error status
 
     print("\nApplication finished.") # Add a final message

@@ -31,7 +31,7 @@ class InputTrigger(ABC):
     """
 
     def __init__(self,
-                 agent_name: str,
+                 agent_config_data: Dict[str, Any],
                  trigger_config_data: Optional[Dict[str, Any]] = None,
                  trigger_secrets: Optional[Dict[str, Any]] = None):
         """
@@ -44,7 +44,8 @@ class InputTrigger(ABC):
             trigger_secrets: Dictionary containing the secrets required by this
                              trigger instance.
         """
-        self.agent_name = agent_name
+        self.agent_config_data = agent_config_data
+        self.agent_name = agent_config_data["name"]
         # Store the provided config and secrets, defaulting to empty dicts if None
         self.trigger_config: Dict[str, Any] = trigger_config_data or {}
         self.trigger_secrets: Dict[str, Any] = trigger_secrets or {}
@@ -294,7 +295,7 @@ class InputTrigger(ABC):
             callback("Error: AI agent is not configured.")
             return
 
-        gpt_handler = get_gpt_handler()
+        gpt_handler = get_gpt_handler(self.agent_config_data)
         prompt_to_send = current_prompt if current_prompt is not None else initial_query
 
         if recursion_depth >= MAX_RECURSION_DEPTH:

@@ -28,7 +28,7 @@ from ras.chat_thread import get_gpt_handler
 # Dictionary to store loaded event listeners
 listeners: Dict[str, InputTrigger] = {}
 
-def ask_gpt(prompt: str) -> str:
+def ask_gpt(prompt: str, agent_config_data: Dict[str, Any]) -> str:
     """
     Send a request to the GPT model and wait for the response.
     This is a synchronous wrapper around the asynchronous GPT handler.
@@ -39,10 +39,10 @@ def ask_gpt(prompt: str) -> str:
     Returns:
         The response from the GPT model.
     """
-    gpt_handler = get_gpt_handler()
+    gpt_handler = get_gpt_handler(agent_config_data)
     return gpt_handler.ask_gpt_sync(prompt)
 
-def ask_gpt_async(prompt: str, callback=None):
+def ask_gpt_async(prompt: str, agent_config_data: Dict[str, Any], callback=None):
     """
     Queue a request to the GPT model without waiting for the response.
 
@@ -50,7 +50,7 @@ def ask_gpt_async(prompt: str, callback=None):
         prompt: The prompt to send to the GPT model.
         callback: Optional callback function to call with the response.
     """
-    gpt_handler = get_gpt_handler()
+    gpt_handler = get_gpt_handler(agent_config_data)
     gpt_handler.ask_gpt(prompt, callback)
 
 # --- discover_event_listeners function removed ---
@@ -357,13 +357,6 @@ async def main(agent_manifest_data: Dict[str, Any]): # Manifest is now required
         # Ensure proper cleanup
         print("Initiating listener shutdown...")
         await stop_event_listeners()
-
-        # Clean shutdown of GPT handler
-        print("Shutting down GPT handler...")
-        gpt_handler = get_gpt_handler()
-        if gpt_handler: # Check if handler exists before shutdown
-            gpt_handler.shutdown()
-        print("Shutdown complete.")
 
 # Example of direct usage (less likely now it's called from elsewhere)
 if __name__ == "__main__":

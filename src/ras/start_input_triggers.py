@@ -205,10 +205,10 @@ class ConversationLogger:
             return None
 
 # --- patch_gpt_handler function moved from main.py ---
-def patch_gpt_handler():
+def patch_gpt_handler(agent_config_data: Dict[str, Any]):
     """Patch the GPT handler to log conversations."""
     try:
-        handler = get_gpt_handler() # Get instance once
+        handler = get_gpt_handler(agent_config_data) # Get instance once
         if not handler: # Check if handler was successfully retrieved
              print("Skipping GPT handler patching because handler instance is None.")
              return
