@@ -20,14 +20,15 @@ class DiscordBotTrigger(InputTrigger):
     """
 
     def __init__(self,
-                 agent_name: str,
+                 agent_config_data: Dict[str, Any], # Changed: Accept full agent config
                  trigger_config_data: Optional[Dict[str, Any]] = None,
                  trigger_secrets: Optional[Dict[str, Any]] = None):
         """
         Initializes the DiscordBotTrigger.
 
         Args:
-            agent_name: The name of the agent this trigger instance belongs to.
+            agent_config_data: Dictionary containing the configuration for the agent
+                               this trigger belongs to (includes agent name).
             trigger_config_data: Dictionary containing configuration for this trigger.
                                  Expected keys: None currently, but could include things like
                                  allowed_channels, command_prefix, etc.
@@ -35,8 +36,14 @@ class DiscordBotTrigger(InputTrigger):
                              Expected keys:
                              - 'discord_bot_token': The authentication token for the Discord bot.
         """
-        super().__init__(agent_name, trigger_config_data, trigger_secrets)
-        self.logger = logging.getLogger(f"{self.agent_name}.{self.name}") # Use specific logger
+        # Changed: Pass the full agent_config_data to the base class
+        super().__init__(agent_config_data, trigger_config_data, trigger_secrets)
+        # self.agent_name is now set by the base class __init__
+
+        # Use the logger initialized by the base class or re-initialize if needed
+        # The base class already initializes self.logger correctly like this:
+        # self.logger = logging.getLogger(f"{self.agent_name}.{self.__class__.__name__}")
+        # So, no need to redefine self.logger here unless you want a different format.
 
         # --- Configuration & Secrets ---
         # Get the bot token from the secrets passed during initialization
@@ -63,6 +70,7 @@ class DiscordBotTrigger(InputTrigger):
         # --- Event Handlers ---
         self._register_event_handlers()
 
+        # Use self.agent_name which is set by the base class
         self.logger.info(f"Discord Bot Trigger initialized for Agent '{self.agent_name}'")
 
     @property
@@ -99,9 +107,11 @@ class DiscordBotTrigger(InputTrigger):
                 if is_mentioned:
                     # Remove the mention from the content
                     content_to_process = content_to_process.replace(f'<@{self.client.user.id}>', '').strip()
-                    self.logger.info(f"Bot mentioned by {message.author}. Processing: '{content_to_process}'")
+                    # Use self.agent_name set by base class
+                    self.logger.info(f"Bot for agent '{self.agent_name}' mentioned by {message.author}. Processing: '{content_to_process}'")
                 else:
-                    self.logger.info(f"Received DM from {message.author}. Processing: '{content_to_process}'")
+                    # Use self.agent_name set by base class
+                    self.logger.info(f"Received DM for agent '{self.agent_name}' from {message.author}. Processing: '{content_to_process}'")
 
 
                 # Define the callback for the AI response
@@ -112,7 +122,7 @@ class DiscordBotTrigger(InputTrigger):
                         if len(ai_response) > 2000:
                              self.logger.warning("AI response exceeds 2000 characters. Truncating.")
                              # Consider splitting the message instead of truncating
-                             await message.channel.send(ai_response[:2000])
+                             await message.channel.send(ai_response[:1990] + "...") # Truncate safely
                         else:
                              await message.channel.send(ai_response)
                     except discord.errors.Forbidden:
@@ -129,18 +139,35 @@ class DiscordBotTrigger(InputTrigger):
                 # We'll run the async callback in the bot's event loop.
                 def sync_callback_wrapper(ai_response: str):
                     self.logger.debug("Sync wrapper called. Scheduling async Discord callback.")
-                    asyncio.run_coroutine_threadsafe(discord_callback(ai_response), self.client.loop)
+                    # Ensure the client loop is running before scheduling
+                    if self.client.loop and self.client.loop.is_running():
+                        asyncio.run_coroutine_threadsafe(discord_callback(ai_response), self.client.loop)
+                    else:
+                        self.logger.error("Discord client loop not available or not running. Cannot send response.")
+
 
                 # Start typing indicator
-                async with message.channel.typing():
-                    self._execute_ai_agent_async(
-                        initial_query=content_to_process,
-                        callback=sync_callback_wrapper # Pass the sync wrapper
-                    )
+                try:
+                    async with message.channel.typing():
+                        # Pass the full agent config data as expected by the base method
+                        self._execute_ai_agent_async(
+                            initial_query=content_to_process,
+                            callback=sync_callback_wrapper # Pass the sync wrapper
+                            # Note: _execute_ai_agent_async uses self.agent_config_data internally
+                        )
+                except discord.errors.Forbidden:
+                     self.logger.error(f"Missing permissions to send typing indicator in channel #{message.channel}")
+                     # Still attempt to process the message without typing indicator
+                     self._execute_ai_agent_async(
+                         initial_query=content_to_process,
+                         callback=sync_callback_wrapper
+                     )
+                except Exception as e:
+                    self.logger.error(f"Error during message processing or typing indicator: {e}", exc_info=True)
+
 
             # --- Optional: MCP Command Check (if not handled by AI agent) ---
-            # If you want the trigger to directly check for MCP commands *before*
-            # sending to the AI, you could add:
+            # (Logic remains the same as before)
             # elif self.contains_command(message.content):
             #     self.logger.info(f"Detected MCP command in message: {message.content}")
             #     # command_to_run = ... # Extract the specific command
@@ -155,6 +182,12 @@ class DiscordBotTrigger(InputTrigger):
         @self.client.event
         async def on_error(event, *args, **kwargs):
             self.logger.error(f"Unhandled error in Discord event '{event}':", exc_info=True)
+            # Attempt to log more details if available
+            if args:
+                self.logger.error(f"Event args: {args}")
+            if kwargs:
+                self.logger.error(f"Event kwargs: {kwargs}")
+
 
         @self.client.event
         async def on_disconnect():
@@ -169,10 +202,11 @@ class DiscordBotTrigger(InputTrigger):
 
 
     async def initialize(self):
-        """Initializes the trigger (connects the bot)."""
+        """Initializes the trigger (checks token)."""
         # Base class initialize gets the loop and logs
         await super().initialize()
-        self.logger.info("Initializing Discord Bot Trigger...")
+        # Use self.agent_name set by base class
+        self.logger.info(f"Initializing Discord Bot Trigger for Agent '{self.agent_name}'...")
 
         if not self.bot_token:
              self.logger.error("Cannot initialize Discord bot: Token is missing.")
@@ -195,17 +229,22 @@ class DiscordBotTrigger(InputTrigger):
              self.logger.warning("Bot connection task already running.")
              return
 
-        self.logger.info("Starting Discord bot connection...")
+        # Use self.agent_name set by base class
+        self.logger.info(f"Starting Discord bot connection for Agent '{self.agent_name}'...")
         try:
             # Start the client. Runs until client.close() is called.
             # discord.py manages its own loop internally when run this way.
             # We run it in a separate task to not block the main async flow.
             self.logger.debug("Creating client.start task...")
             # Pass the token directly to start()
-            self._connection_task = asyncio.create_task(self.client.start(self.bot_token), name=f"discord_bot_{self.agent_name}")
-            self.logger.info("Discord client.start task created.")
+            # Use agent_name in task name for clarity if multiple discord bots run
+            self._connection_task = asyncio.create_task(
+                self.client.start(self.bot_token),
+                name=f"discord_bot_{self.agent_name}"
+            )
+            self.logger.info(f"Discord client.start task created (Task Name: {self._connection_task.get_name()}).")
             # Give it a moment to try and connect
-            await asyncio.sleep(1)
+            await asyncio.sleep(2) # Slightly longer sleep
             if not self.client.is_ready():
                  self.logger.warning("Discord client may still be connecting...")
             # The task now runs in the background.
@@ -224,10 +263,12 @@ class DiscordBotTrigger(InputTrigger):
     async def stop(self):
         """Stops the Discord bot and disconnects."""
         await super().stop() # Log stop message
-        self.logger.info("Stopping Discord bot...")
+        # Use self.agent_name set by base class
+        self.logger.info(f"Stopping Discord bot for Agent '{self.agent_name}'...")
         self._is_running = False # Mark as not running
 
-        if self.client and self.client.is_ready():
+        # Check if client exists and is connected before trying to close
+        if hasattr(self, 'client') and self.client and not self.client.is_closed():
             try:
                 self.logger.info("Closing Discord client connection...")
                 await self.client.close()
@@ -238,19 +279,20 @@ class DiscordBotTrigger(InputTrigger):
              self.logger.info("Discord client was not running or already closed.")
 
         if self._connection_task and not self._connection_task.done():
-             self.logger.info("Cancelling Discord connection task...")
+             task_name = self._connection_task.get_name()
+             self.logger.info(f"Cancelling Discord connection task ('{task_name}')...")
              self._connection_task.cancel()
              try:
                  # Wait briefly for cancellation to be processed
                  await asyncio.wait_for(self._connection_task, timeout=5.0)
              except asyncio.CancelledError:
-                 self.logger.info("Discord connection task cancelled successfully.")
+                 self.logger.info(f"Discord connection task ('{task_name}') cancelled successfully.")
              except asyncio.TimeoutError:
-                 self.logger.warning("Timeout waiting for Discord connection task to cancel.")
+                 self.logger.warning(f"Timeout waiting for Discord connection task ('{task_name}') to cancel.")
              except Exception as e:
                   # Log errors that might occur during cancellation itself
-                  self.logger.error(f"Error during Discord task cancellation: {e}", exc_info=True)
+                  self.logger.error(f"Error during Discord task ('{task_name}') cancellation: {e}", exc_info=True)
         self._connection_task = None # Clear the task reference
 
-        self.logger.info("DiscordBotTrigger stopped.")
+        self.logger.info(f"DiscordBotTrigger stopped for Agent '{self.agent_name}'.")
 
