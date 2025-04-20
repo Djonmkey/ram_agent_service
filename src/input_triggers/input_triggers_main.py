@@ -260,7 +260,7 @@ async def load_input_triggers(agent_manifest_data: Dict[str, Any]):
         print("⚠️ No input triggers were successfully loaded.")
 
 
-async def start_event_listeners():
+async def start_input_triggers():
     """
     Start all successfully initialized event listeners.
     """
@@ -334,7 +334,7 @@ async def main(agent_manifest_data: Dict[str, Any]): # Manifest is now required
         await load_input_triggers(agent_manifest_data) # Pass the manifest
 
         # Start whatever listeners were successfully loaded
-        await start_event_listeners()
+        await start_input_triggers()
 
         if not listeners:
              print("No listeners running. Exiting.")
