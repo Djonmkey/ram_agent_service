@@ -35,64 +35,44 @@ class InputTrigger(ABC):
     Provides common functionality for configuration, logging, and AI agent interaction.
     """
 
-    def __init__(self, config_path: Optional[str] = None, config_data: Optional[Dict[str, Any]] = None):
+    def __init__(self,
+                 agent_name: str,
+                 trigger_config_data: Optional[Dict[str, Any]] = None,
+                 trigger_secrets: Optional[Dict[str, Any]] = None):
         """
         Initialize the base trigger.
 
         Args:
-            config_path: Optional path to a JSON configuration file.
-                         If None, defaults to a JSON file with the same name as the
-                         trigger class in the same directory.
-            config_data: Optional dictionary containing configuration data.
-                         Overrides data loaded from config_path if both are provided.
+            agent_name: The name of the agent this trigger instance belongs to.
+            trigger_config_data: Dictionary containing the specific configuration
+                                 for this trigger instance.
+            trigger_secrets: Dictionary containing the secrets required by this
+                             trigger instance.
         """
-        self.config: Dict[str, Any] = {}
-        self._resolve_config_path(config_path)
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.agent_name = agent_name
+        # Store the provided config and secrets, defaulting to empty dicts if None
+        self.trigger_config: Dict[str, Any] = trigger_config_data or {}
+        self.trigger_secrets: Dict[str, Any] = trigger_secrets or {}
+
+        self.logger = logging.getLogger(f"{self.agent_name}.{self.__class__.__name__}") # Include agent name in logger
         self.loop: Optional[asyncio.AbstractEventLoop] = None
-        self._load_config(config_data)
 
-        # Get configurable paths, falling back to defaults
-        self.mcp_commands_path = Path(self.config.get("mcp_commands_path", DEFAULT_MCP_COMMANDS_PATH))
-        self.mcp_secrets_path = Path(self.config.get("mcp_secrets_path", DEFAULT_MCP_SECRETS_PATH))
-        self.mcp_modules_dir = Path(self.config.get("mcp_modules_dir", DEFAULT_MCP_MODULES_DIR))
+        # Get configurable paths from the trigger-specific config, falling back to defaults
+        # Note: We now use self.trigger_config instead of self.config
+        self.mcp_commands_path = Path(self.trigger_config.get("mcp_commands_path", DEFAULT_MCP_COMMANDS_PATH))
+        self.mcp_secrets_path = Path(self.trigger_config.get("mcp_secrets_path", DEFAULT_MCP_SECRETS_PATH))
+        self.mcp_modules_dir = Path(self.trigger_config.get("mcp_modules_dir", DEFAULT_MCP_MODULES_DIR))
 
-        self.logger.debug(f"Base trigger initialized for {self.name}")
+        self.logger.debug(f"Base trigger initialized for Agent '{self.agent_name}', Trigger '{self.name}'")
+        self.logger.debug(f"Trigger Config Keys: {list(self.trigger_config.keys())}") # Log keys, not values
+        # Avoid logging secrets keys unless necessary for debugging specific issues
+        # self.logger.debug(f"Trigger Secrets Keys: {list(self.trigger_secrets.keys())}")
         self.logger.debug(f"MCP Commands Path: {self.mcp_commands_path}")
         self.logger.debug(f"MCP Secrets Path: {self.mcp_secrets_path}")
         self.logger.debug(f"MCP Modules Dir: {self.mcp_modules_dir}")
 
-
-    def _resolve_config_path(self, config_path: Optional[str]):
-        """Determine the configuration file path."""
-        if config_path:
-            self.config_path = Path(config_path)
-        else:
-            # Default: <ClassName>.json in the same directory as the trigger's source file
-            trigger_file_path = Path(sys.modules[self.__class__.__module__].__file__)
-            default_config_name = f"{trigger_file_path.stem}.json"
-            self.config_path = trigger_file_path.parent / default_config_name
-        self.logger.debug(f"Resolved config path: {self.config_path}")
-
-    def _load_config(self, config_data: Optional[Dict[str, Any]] = None):
-        """Load configuration from file and merge with provided data."""
-        loaded_config = {}
-        if self.config_path and self.config_path.exists():
-            try:
-                with open(self.config_path, 'r') as f:
-                    loaded_config = json.load(f)
-                self.logger.info(f"Loaded configuration from {self.config_path}")
-            except json.JSONDecodeError:
-                self.logger.error(f"Failed to decode JSON from config file: {self.config_path}", exc_info=True)
-            except Exception:
-                self.logger.error(f"Error loading config file: {self.config_path}", exc_info=True)
-        elif self.config_path:
-             self.logger.warning(f"Configuration file not found: {self.config_path}")
-
-        # Merge loaded config with provided config_data (config_data takes precedence)
-        self.config = {**loaded_config, **(config_data or {})}
-        self.logger.debug(f"Final configuration loaded: {list(self.config.keys())}") # Log keys, not values
-
+    # --- Removed _resolve_config_path and _load_config methods ---
+    # Configuration is now passed directly via __init__
 
     @abstractmethod
     async def initialize(self):
@@ -102,7 +82,7 @@ class InputTrigger(ABC):
         Responsible for setting up connections, resources, etc.
         """
         self.loop = asyncio.get_running_loop()
-        self.logger.info(f"Initializing trigger: {self.name}")
+        self.logger.info(f"Initializing trigger: {self.name} for Agent: {self.agent_name}")
         # Subclasses should continue initialization here
 
     @abstractmethod
@@ -110,7 +90,7 @@ class InputTrigger(ABC):
         """
         Start the trigger's main loop or event listening process.
         """
-        self.logger.info(f"Starting trigger: {self.name}")
+        self.logger.info(f"Starting trigger: {self.name} for Agent: {self.agent_name}")
         pass
 
     @abstractmethod
@@ -118,19 +98,20 @@ class InputTrigger(ABC):
         """
         Stop the trigger and clean up resources.
         """
-        self.logger.info(f"Stopping trigger: {self.name}")
+        self.logger.info(f"Stopping trigger: {self.name} for Agent: {self.agent_name}")
         pass
 
     @property
     @abstractmethod
     def name(self) -> str:
         """
-        Get the unique name of the trigger.
+        Get the unique name of the trigger class (subclass responsibility).
+        Note: The unique instance name used in the main loop is agent_name + listener.name
         """
         pass
 
-    # --- MCP Command Handling ---
-
+    # --- MCP Command Handling (no changes needed here, uses self.mcp_... paths) ---
+    # ... (rest of the MCP methods remain the same) ...
     def _load_json_safely(self, file_path: Path) -> Optional[Dict]:
         """Safely load JSON data from a file."""
         if not file_path.exists():
@@ -172,7 +153,7 @@ class InputTrigger(ABC):
         """Executes a specific MCP command identified by its system_text."""
         self.logger.info(f"Attempting to run MCP command: {command_text}")
         command_data = self._load_json_safely(self.mcp_commands_path)
-        secrets_data = self._load_json_safely(self.mcp_secrets_path)
+        secrets_data = self._load_json_safely(self.mcp_secrets_path) # MCP secrets, not trigger secrets
 
         if not command_data or not secrets_data:
             return "Error: Could not load MCP command or secrets configuration."
@@ -200,7 +181,7 @@ class InputTrigger(ABC):
                 self.logger.error(f"MCP module file not found: {module_file}")
                 return f"Error: Module file not found for command {command_text}"
 
-            # Load secrets for the module
+            # Load secrets for the module from MCP secrets file
             common_params = secrets_data.get("common", {})
             secret_entry = next(
                 (s for s in secrets_data.get("secrets", [])
@@ -208,9 +189,7 @@ class InputTrigger(ABC):
                 None
             )
             if not secret_entry:
-                self.logger.warning(f"Missing secrets entry for module: {module_path_str}")
-                # Decide if this is an error or if common params are enough
-                # return f"Missing secrets for module: {module_path_str}"
+                self.logger.warning(f"Missing secrets entry for module: {module_path_str} in {self.mcp_secrets_path}")
                 internal_params = common_params # Use only common if specific are missing
             else:
                 # Merge common with specific, specific taking precedence
@@ -223,28 +202,16 @@ class InputTrigger(ABC):
                  return f"Error loading module for command {command_text}"
 
             cmd_mod = module_from_spec(spec)
-            # Add module's directory to sys.path temporarily if needed for relative imports within the module
-            # module_dir = str(module_file.parent)
-            # if module_dir not in sys.path:
-            #     sys.path.insert(0, module_dir)
-            #     needs_path_removal = True
-            # else:
-            #     needs_path_removal = False
-
             spec.loader.exec_module(cmd_mod)
-
-            # if needs_path_removal:
-            #     sys.path.pop(0) # Clean up sys.path
 
             if hasattr(cmd_mod, handler_name):
                 handler = getattr(cmd_mod, handler_name)
                 self.logger.info(f"🚀 Running MCP Command: {module_path_str}.{handler_name}")
-                # Assuming handler takes (command_params, internal_params)
-                # command_params might be extracted from the original message if needed
+                # Pass MCP internal params. Trigger secrets (self.trigger_secrets) are available
+                # within the trigger instance if needed by the trigger logic itself, but not
+                # typically passed directly to MCP command handlers unless designed that way.
                 result = handler({}, internal_params)
                 self.logger.info(f"✅ MCP Command '{command_text}' result received.")
-                # Limit result length for logging if necessary
-                # self.logger.debug(f"Result snippet: {str(result)[:200]}...")
                 return str(result) # Ensure result is string
             else:
                 self.logger.error(f"Handler function '{handler_name}' not found in module {module_path_str}")
@@ -310,8 +277,8 @@ class InputTrigger(ABC):
         return new_prompt
 
 
-    # --- AI Agent Interaction ---
-
+    # --- AI Agent Interaction (no changes needed here) ---
+    # ... (rest of the AI methods remain the same) ...
     def _execute_ai_agent_async(self,
                                 initial_query: str,
                                 callback: Callable[[str], None],

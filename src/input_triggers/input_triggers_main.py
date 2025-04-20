@@ -11,6 +11,8 @@ from pathlib import Path # Use pathlib for better path manipulation
 # Assumes this file is located at src/input_triggers/input_triggers_main.py
 # Goes up two levels: input_triggers -> src
 SRC_DIR = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = SRC_DIR.parent # Define project root for resolving relative paths
+
 # Add src directory to sys.path to ensure imports work correctly,
 # especially for dynamically loaded modules. Insert at the beginning
 # to prioritize it.
@@ -81,10 +83,8 @@ async def load_input_triggers(agent_manifest_data: Dict[str, Any]):
             print(f"WARNING: Agent '{agent_name}' is missing the 'agent_config_file' key in the manifest. Skipping.")
             continue
 
-        # Construct absolute path relative to the project root (SRC_DIR.parent)
-        # Assumes paths in manifest like 'config/agents/...' are relative to the project root.
-        # Adjust if paths are relative to the manifest file location itself or SRC_DIR.
-        config_file_absolute = SRC_DIR.parent / config_file_relative
+        # Construct absolute path relative to the project root
+        config_file_absolute = PROJECT_ROOT / config_file_relative
 
         print(f"\nProcessing Agent: '{agent_name}'")
         print(f"  Attempting to load agent config: {config_file_absolute}")
@@ -124,63 +124,115 @@ async def load_input_triggers(agent_manifest_data: Dict[str, Any]):
         print(f"  Found {len(input_triggers_list)} input trigger(s) specified for '{agent_name}'.")
 
         for i, trigger_info in enumerate(input_triggers_list):
+            trigger_index_str = f"Trigger #{i+1}" # For logging
             if not isinstance(trigger_info, dict):
-                print(f"  WARNING: Skipping trigger #{i+1} for agent '{agent_name}' - item in 'input_triggers' is not a dictionary.")
+                print(f"  WARNING: Skipping {trigger_index_str} for agent '{agent_name}' - item in 'input_triggers' is not a dictionary.")
                 continue
 
             module_path_str = trigger_info.get("python_code_module")
             if not module_path_str or not isinstance(module_path_str, str):
-                print(f"  WARNING: Skipping trigger #{i+1} for agent '{agent_name}' due to missing or invalid 'python_code_module'.")
+                print(f"  WARNING: Skipping {trigger_index_str} for agent '{agent_name}' due to missing or invalid 'python_code_module'.")
                 continue
 
-            print(f"    Attempting to load trigger module: {module_path_str}")
+            # --- Get Trigger-Specific Config and Secrets Paths ---
+            trigger_config_relative_path = trigger_info.get("input_trigger_config_file")
+            if not trigger_config_relative_path or not isinstance(trigger_config_relative_path, str):
+                print(f"  WARNING: Skipping {trigger_index_str} ('{module_path_str}') for agent '{agent_name}' due to missing or invalid 'input_trigger_config_file'.")
+                continue
 
+            trigger_secrets_relative_path = trigger_info.get("input_trigger_secrets_file")
+            if not trigger_secrets_relative_path or not isinstance(trigger_secrets_relative_path, str):
+                print(f"  WARNING: Skipping {trigger_index_str} ('{module_path_str}') for agent '{agent_name}' due to missing or invalid 'input_trigger_secrets_file'.")
+                continue
+
+            # Construct absolute paths relative to project root
+            trigger_config_absolute_path = PROJECT_ROOT / trigger_config_relative_path
+            trigger_secrets_absolute_path = PROJECT_ROOT / trigger_secrets_relative_path
+
+            print(f"    {trigger_index_str}: Module '{module_path_str}'")
+            print(f"      Config Path: {trigger_config_absolute_path}")
+            print(f"      Secrets Path: {trigger_secrets_absolute_path}")
+
+            # --- Load Trigger-Specific Config ---
+            trigger_config_data = None
+            if not trigger_config_absolute_path.exists():
+                 print(f"      ❌ ERROR: Trigger config file not found: {trigger_config_absolute_path}")
+                 continue
+            if not trigger_config_absolute_path.is_file():
+                 print(f"      ❌ ERROR: Trigger config path is not a file: {trigger_config_absolute_path}")
+                 continue
             try:
-                # Dynamically import the module
-                # Ensure sys.path includes SRC_DIR so imports like 'input_triggers.listeners.xyz' work
-                module = importlib.import_module(module_path_str)
+                with open(trigger_config_absolute_path, 'r', encoding='utf-8') as f:
+                    trigger_config_data = json.load(f)
+                print(f"      ✅ Loaded trigger config.")
+            except json.JSONDecodeError as e:
+                print(f"      ❌ ERROR: Failed to parse JSON from trigger config file '{trigger_config_absolute_path}': {e}")
+                continue
+            except IOError as e:
+                print(f"      ❌ ERROR: Could not read trigger config file '{trigger_config_absolute_path}': {e}")
+                continue
+            except Exception as e:
+                print(f"      ❌ ERROR: An unexpected error occurred loading trigger config '{trigger_config_absolute_path}': {e}")
+                continue
 
-                # Find the InputTrigger subclass within the module
+            # --- Load Trigger-Specific Secrets ---
+            trigger_secrets_data = None
+            if not trigger_secrets_absolute_path.exists():
+                 print(f"      ❌ ERROR: Trigger secrets file not found: {trigger_secrets_absolute_path}")
+                 continue
+            if not trigger_secrets_absolute_path.is_file():
+                 print(f"      ❌ ERROR: Trigger secrets path is not a file: {trigger_secrets_absolute_path}")
+                 continue
+            try:
+                with open(trigger_secrets_absolute_path, 'r', encoding='utf-8') as f:
+                    trigger_secrets_data = json.load(f)
+                print(f"      ✅ Loaded trigger secrets.")
+            except json.JSONDecodeError as e:
+                print(f"      ❌ ERROR: Failed to parse JSON from trigger secrets file '{trigger_secrets_absolute_path}': {e}")
+                continue
+            except IOError as e:
+                print(f"      ❌ ERROR: Could not read trigger secrets file '{trigger_secrets_absolute_path}': {e}")
+                continue
+            except Exception as e:
+                print(f"      ❌ ERROR: An unexpected error occurred loading trigger secrets '{trigger_secrets_absolute_path}': {e}")
+                continue
+
+            # --- Import Module and Find Class ---
+            print(f"    Attempting to load trigger module: {module_path_str}")
+            try:
+                module = importlib.import_module(module_path_str)
                 input_trigger_class = None
                 for attr_name in dir(module):
                     try:
                         attr = getattr(module, attr_name)
-                        # Check if it's a class, a concrete subclass of InputTrigger,
-                        # and not InputTrigger itself.
                         if (isinstance(attr, type) and
                             issubclass(attr, InputTrigger) and
                             attr is not InputTrigger and
-                            not getattr(attr, '__abstractmethods__', False)): # Check if it's concrete
+                            not getattr(attr, '__abstractmethods__', False)):
                             input_trigger_class = attr
                             print(f"      Found listener class: {input_trigger_class.__name__}")
-                            break # Found the first concrete subclass
+                            break
                     except Exception as inner_e:
-                        # Catch errors during attribute access/check within the module
                         print(f"      Warning: Error inspecting attribute '{attr_name}' in module {module_path_str}: {inner_e}")
-
 
                 if not input_trigger_class:
                     print(f"    ❌ ERROR: No concrete InputTrigger subclass found in module {module_path_str}.")
                     continue
 
-                # Instantiate the listener class
-                # Pass the specific agent's config data AND the overall manifest data
-                # Assumes listener __init__ accepts both config_data and agent_manifest_data
+                # --- Instantiate the listener class with specific config and secrets ---
                 try:
-                    # Pass agent_config_data to the 'config_data' param of InputTrigger base
-                    # Pass the full manifest to 'agent_manifest_data' (assuming subclasses handle this)
+                    # Pass agent_name, loaded trigger config, and loaded trigger secrets
                     listener = input_trigger_class(
-                        config_data=agent_config_data, # Pass the specific agent config here
-                        agent_name=agent_name # Pass the full manifest
+                        agent_name=agent_name,
+                        trigger_config_data=trigger_config_data,
+                        trigger_secrets=trigger_secrets_data
                     )
 
-                    # The listeners array element must contain a concatination of the agent name and the listerner.name because multple agents may use the same input trigger class.
-                    listener_name = agent_name + listener.name # Get name *after* instantiation
+                    # Unique listener name for the global dictionary
+                    listener_name = f"{agent_name}_{listener.name}" # Use agent name prefix for uniqueness
 
-                    # Check for duplicate listener names across all agents
                     if listener_name in listeners:
-                         print(f"    ❌ ERROR: Duplicate listener name '{listener_name}' detected (from agent '{agent_name}'). Skipping this instance.")
-                         # Consider alternative handling: rename, allow if different class, etc.
+                         print(f"    ❌ ERROR: Duplicate listener instance name '{listener_name}' detected. Skipping this instance.")
                          continue
 
                     print(f"    Initializing '{listener_name}' ({input_trigger_class.__name__})...")
@@ -191,9 +243,9 @@ async def load_input_triggers(agent_manifest_data: Dict[str, Any]):
 
                 except TypeError as te:
                     # Catch if the listener __init__ doesn't accept the expected args
-                    print(f"    ❌ ERROR: Failed to instantiate {input_trigger_class.__name__} (TypeError): {te}. Check its __init__ method signature (needs to accept config_data and agent_manifest_data).")
+                    print(f"    ❌ ERROR: Failed to instantiate {input_trigger_class.__name__} (TypeError): {te}. Check its __init__ method signature (expected agent_name, trigger_config_data, trigger_secrets).")
                 except Exception as e:
-                    print(f"    ❌ ERROR: Failed to initialize {input_trigger_class.__name__}: {e}")
+                    print(f"    ❌ ERROR: Failed to initialize {input_trigger_class.__name__} for agent '{agent_name}': {e}")
                     # Optionally, add more detailed error logging here (e.g., traceback)
 
             except (ImportError, ModuleNotFoundError) as e:
@@ -315,18 +367,3 @@ async def main(agent_manifest_data: Dict[str, Any]): # Manifest is now required
 if __name__ == "__main__":
     print("ERROR: Running input_triggers_main directly is not supported with the new manifest-driven loading.")
     print("Please run the main application entry point (e.g., ras/main.py) which provides the manifest.")
-    # Example of how it *might* be run with a dummy manifest for testing:
-    # print("Attempting direct run with dummy manifest for testing...")
-    # dummy_manifest_path = SRC_DIR.parent / "config" / "agent_manifest.json" # Adjust path as needed
-    # try:
-    #     with open(dummy_manifest_path, 'r') as f:
-    #         dummy_manifest = json.load(f)
-    #     asyncio.run(main(dummy_manifest))
-    # except FileNotFoundError:
-    #      print(f"ERROR: Dummy manifest file not found at {dummy_manifest_path}")
-    # except json.JSONDecodeError:
-    #      print(f"ERROR: Could not decode dummy manifest file at {dummy_manifest_path}")
-    # except KeyboardInterrupt:
-    #     print("\nShutdown initiated from __main__.")
-    # except Exception as e:
-    #      print(f"Error during direct run: {e}")
