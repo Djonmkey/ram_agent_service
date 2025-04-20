@@ -319,7 +319,7 @@ def patch_gpt_handler(agent_config_data: Dict[str, Any]):
 
 
 # --- run_event_listeners function updated ---
-async def run_event_listeners(agent_manifest_data: Optional[Dict[str, Any]] = None):
+async def run_event_listeners(agent_manifest_data: Dict[str, Any]):
     """
     Run the event listeners main function, passing manifest data.
 
