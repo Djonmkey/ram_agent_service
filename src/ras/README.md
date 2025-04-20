@@ -58,22 +58,6 @@ Each agent is composed of the following modular components:
 
 - Python 3.12
 
-## Installation
-
-### Set up Python Environment
-
-It's recommended to use a virtual environment for Python dependencies:
-
-```bash
-# Create a virtual environment
-python -m venv venv
-
-# Activate the virtual environment
-# On Windows:
-venv\Scripts\activate
-# On macOS/Linux:
-source venv/bin/activate
-```
 
 ## Development
 
