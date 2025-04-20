@@ -87,96 +87,44 @@ class DiscordBotTrigger(InputTrigger):
 
         @self.client.event
         async def on_message(message: discord.Message):
-            # Ignore messages from the bot itself
+            """
+            Respond to simple messages and pass commands for processing.
+
+            :param message: Message received from Discord.
+            """
             if message.author == self.client.user:
                 return
 
-            # Ignore messages from other bots (optional)
-            if message.author.bot:
-                 return
+            # Immediately respond to prevent timeout
+            ack_message = await message.channel.send("Working on it...")
 
-            self.logger.debug(f"Received message in #{message.channel} from {message.author}: {message.content}")
+            async def handle_long_task():
+                response_future = asyncio.Future()
 
-            # --- AI Agent Interaction Logic ---
-            # Example: Process message if bot is mentioned or it's a DM
-            is_mentioned = self.client.user in message.mentions
-            is_dm = isinstance(message.channel, discord.DMChannel)
+                def set_response(result):
+                    if self.loop and not self.loop.is_closed():
+                        self.loop.call_soon_threadsafe(response_future.set_result, result)
 
-            if is_mentioned or is_dm:
-                content_to_process = message.content
-                if is_mentioned:
-                    # Remove the mention from the content
-                    content_to_process = content_to_process.replace(f'<@{self.client.user.id}>', '').strip()
-                    # Use self.agent_name set by base class
-                    self.logger.info(f"Bot for agent '{self.agent_name}' mentioned by {message.author}. Processing: '{content_to_process}'")
-                else:
-                    # Use self.agent_name set by base class
-                    self.logger.info(f"Received DM for agent '{self.agent_name}' from {message.author}. Processing: '{content_to_process}'")
+                # Queue the GPT request on a separate thread
+                self._execute_ai_agent_async(message.content, set_response)
 
+                # Await the result
+                agent_response = await response_future
 
-                # Define the callback for the AI response
-                async def discord_callback(ai_response: str):
-                    self.logger.info(f"Sending AI response back to Discord channel #{message.channel}")
-                    try:
-                        # Handle potential length limits (Discord limit is 2000 characters)
-                        if len(ai_response) > 2000:
-                             self.logger.warning("AI response exceeds 2000 characters. Truncating.")
-                             # Consider splitting the message instead of truncating
-                             await message.channel.send(ai_response[:1990] + "...") # Truncate safely
-                        else:
-                             await message.channel.send(ai_response)
-                    except discord.errors.Forbidden:
-                        self.logger.error(f"Missing permissions to send message in channel #{message.channel}")
-                    except Exception as e:
-                        self.logger.error(f"Error sending AI response to Discord: {e}", exc_info=True)
-
-                # Use the base class method to interact with the AI agent
-                # Wrap the async discord_callback in a way that _execute_ai_agent_async can call it
-                # Since _execute_ai_agent_async expects a synchronous callback, we need a bridge
-                # or adjust _execute_ai_agent_async if it can handle awaitable callbacks.
-
-                # Assuming _execute_ai_agent_async expects a sync callback for now:
-                # We'll run the async callback in the bot's event loop.
-                def sync_callback_wrapper(ai_response: str):
-                    self.logger.debug("Sync wrapper called. Scheduling async Discord callback.")
-                    # Ensure the client loop is running before scheduling
-                    if self.client.loop and self.client.loop.is_running():
-                        asyncio.run_coroutine_threadsafe(discord_callback(ai_response), self.client.loop)
-                    else:
-                        self.logger.error("Discord client loop not available or not running. Cannot send response.")
-
-
-                # Start typing indicator
+                # Delete the "working" message
                 try:
-                    async with message.channel.typing():
-                        # Pass the full agent config data as expected by the base method
-                        self._execute_ai_agent_async(
-                            initial_query=content_to_process,
-                            callback=sync_callback_wrapper # Pass the sync wrapper
-                            # Note: _execute_ai_agent_async uses self.agent_config_data internally
-                        )
-                except discord.errors.Forbidden:
-                     self.logger.error(f"Missing permissions to send typing indicator in channel #{message.channel}")
-                     # Still attempt to process the message without typing indicator
-                     self._execute_ai_agent_async(
-                         initial_query=content_to_process,
-                         callback=sync_callback_wrapper
-                     )
-                except Exception as e:
-                    self.logger.error(f"Error during message processing or typing indicator: {e}", exc_info=True)
+                    await ack_message.delete()
+                except discord.HTTPException:
+                    pass  # Ignore if message already deleted or not found
 
+                # Send the final response
+                if agent_response:
+                    await self.send_long_message(agent_response, message.channel)
+                else:
+                    await message.channel.send("Sorry, I couldn't generate a response.")
 
-            # --- Optional: MCP Command Check (if not handled by AI agent) ---
-            # (Logic remains the same as before)
-            # elif self.contains_command(message.content):
-            #     self.logger.info(f"Detected MCP command in message: {message.content}")
-            #     # command_to_run = ... # Extract the specific command
-            #     # result = self._run_mcp_command(command_to_run)
-            #     # await message.channel.send(f"MCP Command Result:\n```\n{result}\n```")
-            # else:
-            #     # Message is not a mention, DM, or known command - ignore or log
-            #     self.logger.debug("Ignoring message (not mention, DM, or command).")
-            #     pass
+            # Run the long task in the background
+            asyncio.create_task(handle_long_task())
 
 
         @self.client.event
@@ -244,7 +192,7 @@ class DiscordBotTrigger(InputTrigger):
             )
             self.logger.info(f"Discord client.start task created (Task Name: {self._connection_task.get_name()}).")
             # Give it a moment to try and connect
-            await asyncio.sleep(2) # Slightly longer sleep
+            await asyncio.sleep(5) # Slightly longer sleep
             if not self.client.is_ready():
                  self.logger.warning("Discord client may still be connecting...")
             # The task now runs in the background.
