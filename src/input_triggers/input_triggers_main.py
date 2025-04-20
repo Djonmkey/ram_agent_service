@@ -1,3 +1,4 @@
+# /Users/david/Documents/projects/ram_agent_service/src/input_triggers/input_triggers_main.py
 import asyncio
 import importlib
 import os
@@ -115,9 +116,13 @@ def discover_event_listeners() -> List[Type[InputTrigger]]:
 
     return listener_classes
 
-async def load_event_listeners():
+async def load_event_listeners(agent_manifest_data: Optional[Dict[str, Any]] = None):
     """
     Load and initialize all discovered event listeners.
+
+    Args:
+        agent_manifest_data: Optional dictionary containing agent manifest data
+                             to be passed to listeners.
     """
     print("Discovering event listeners...")
     listener_classes = discover_event_listeners()
@@ -131,12 +136,21 @@ async def load_event_listeners():
     # Initialize each listener
     for listener_class in listener_classes:
         try:
-            listener = listener_class() # Instantiate the class
+            # Pass agent_manifest_data to the listener's constructor
+            # Note: The InputTrigger base class and subclasses must be updated
+            #       to accept this argument in their __init__ method.
+            listener = listener_class(agent_manifest_data=agent_manifest_data) # Instantiate the class
             listener_name = listener.name # Get name *after* instantiation
             print(f"Initializing '{listener_name}' ({listener_class.__name__})...")
             await listener.initialize()
             listeners[listener_name] = listener
             print(f"Successfully initialized '{listener_name}'.")
+        except TypeError as te:
+             # Catch if the listener __init__ doesn't accept the new arg
+             if 'agent_manifest_data' in str(te):
+                 print(f"ERROR: Failed to initialize {listener_class.__name__}: Its __init__ method might not accept 'agent_manifest_data'. {te}")
+             else:
+                 print(f"ERROR: Failed to initialize {listener_class.__name__} (TypeError): {te}")
         except Exception as e:
             print(f"ERROR: Failed to initialize {listener_class.__name__}: {e}")
             # Optionally, add more detailed error logging here (e.g., traceback)
@@ -202,14 +216,17 @@ async def stop_event_listeners():
             print(f"ERROR: An unexpected error occurred during listener shutdown: {e}")
 
 
-async def main():
+async def main(agent_manifest_data: Optional[Dict[str, Any]] = None):
     """
-    Main entry point for the application.
+    Main entry point for the input triggers system.
     Loads, starts, and manages event listeners.
+
+    Args:
+        agent_manifest_data: Optional dictionary containing agent manifest data.
     """
     try:
-        # Load and start all event listeners
-        await load_event_listeners()
+        # Load and start all event listeners, passing the manifest data
+        await load_event_listeners(agent_manifest_data)
         await start_event_listeners()
 
         if not listeners:
@@ -235,14 +252,17 @@ async def main():
         # Clean shutdown of GPT handler
         print("Shutting down GPT handler...")
         gpt_handler = get_gpt_handler()
-        gpt_handler.shutdown()
+        if gpt_handler: # Check if handler exists before shutdown
+            gpt_handler.shutdown()
         print("Shutdown complete.")
 
-# Example of direct usage
+# Example of direct usage (less likely now it's called from elsewhere)
 if __name__ == "__main__":
     # Set up asyncio event loop and run the main function
+    # Note: Running directly won't pass agent_manifest_data unless added here
+    print("Warning: Running input_triggers_main directly. Agent manifest data will be None.")
     try:
-        asyncio.run(main())
+        asyncio.run(main()) # Pass None or load manifest here if needed for direct run
     except KeyboardInterrupt:
         # This might catch a Ctrl+C before asyncio.run() fully handles it
         print("\nShutdown initiated from __main__.")

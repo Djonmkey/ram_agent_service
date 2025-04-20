@@ -6,20 +6,24 @@ import json
 from datetime import datetime
 import threading
 import time # Keep time if needed by input_triggers_main or listeners
+from typing import Optional, Dict, Any # Added for type hinting
 
 # Add the event_listeners directory to the path relative to this file
 # Assuming start_input_triggers.py is in the same dir as main.py
-event_listeners_dir = os.path.join(os.path.dirname(__file__), 'event_listeners')
-if event_listeners_dir not in sys.path:
-    sys.path.append(event_listeners_dir)
+# --- This path manipulation might be redundant if input_triggers_main handles src path ---
+# event_listeners_dir = os.path.join(os.path.dirname(__file__), 'event_listeners')
+# if event_listeners_dir not in sys.path:
+#     sys.path.append(event_listeners_dir)
+# --- Consider removing the above if imports work via input_triggers_main's sys.path logic ---
 
 # Import the main function from input_triggers_main.py
 try:
     # Assuming input_triggers_main needs to be imported here now
-    from input_triggers_main import main as input_triggers_main, listeners
+    # Make sure input_triggers_main.py correctly adds src to sys.path
+    from input_triggers.input_triggers_main import main as input_triggers_main, listeners
 except ImportError as e:
-    print(f"Error importing from input_triggers_main: {e}")
-    print("Please ensure input_triggers_main.py exists and is accessible.")
+    print(f"Error importing from input_triggers.input_triggers_main: {e}")
+    print("Please ensure input_triggers_main.py exists in src/input_triggers and src is in sys.path.")
     sys.exit(1)
 
 # Import the GPT handler - ensure gpt_thread doesn't rely on UI
@@ -28,7 +32,7 @@ try:
     from gpt_thread import get_gpt_handler
 except ImportError as e:
     print(f"Error importing from gpt_thread: {e}")
-    print("Please ensure gpt_thread.py exists and is accessible.")
+    print("Please ensure gpt_thread.py exists and is accessible (likely via src path).")
     sys.exit(1)
 
 # --- Globals moved from main.py ---
@@ -212,6 +216,9 @@ def patch_gpt_handler():
     """Patch the GPT handler to log conversations."""
     try:
         handler = get_gpt_handler() # Get instance once
+        if not handler: # Check if handler was successfully retrieved
+             print("Skipping GPT handler patching because handler instance is None.")
+             return
         original_ask_gpt = handler.ask_gpt
         original_ask_gpt_sync = handler.ask_gpt_sync
     except Exception as e:
@@ -228,13 +235,26 @@ def patch_gpt_handler():
             while frame and depth < max_depth:
                 instance = frame.f_locals.get('self')
                 if instance:
+                    # Check if it's an InputTrigger instance and has a name
                     if hasattr(instance, 'name') and isinstance(instance.name, str):
-                        event_listener_name = instance.name
-                        break
+                        # Check if it inherits from InputTrigger to be more specific
+                        try:
+                            # Need InputTrigger class definition available here
+                            from input_triggers.input_triggers import InputTrigger
+                            if isinstance(instance, InputTrigger):
+                                event_listener_name = instance.name
+                                break
+                        except ImportError:
+                            # Fallback if InputTrigger cannot be imported here
+                            event_listener_name = instance.name # Use name if found
+                            # break # Decide if any object with 'name' is okay
+
+                    # Fallback to class name if 'name' attribute isn't suitable
                     elif hasattr(instance, '__class__') and hasattr(instance.__class__, '__name__'):
                          event_listener_name = instance.__class__.__name__
                          # break # Decide if class name is specific enough
 
+                # Check globals (less reliable)
                 elif 'event_listener_name' in frame.f_globals:
                      event_listener_name = frame.f_globals['event_listener_name']
                      break
@@ -269,6 +289,7 @@ def patch_gpt_handler():
                     print(f"Error in original callback for {event_listener_name}: {e.__class__.__name__}: {e}")
 
         try:
+            # Call the original method stored earlier
             return original_ask_gpt(prompt, wrapped_callback)
         except Exception as e:
             print(f"Error calling original ask_gpt for {event_listener_name}: {e}")
@@ -281,11 +302,12 @@ def patch_gpt_handler():
         event_listener_name = determine_caller_name()
 
         try:
+            # Call the original method stored earlier
             response = original_ask_gpt_sync(prompt)
         except Exception as e:
             print(f"Error in original ask_gpt_sync for {event_listener_name}: {e}")
             ConversationLogger.log_conversation(event_listener_name, prompt, f"Error: {e}", begin_time)
-            raise
+            raise # Re-raise the original exception
 
         log_file = ConversationLogger.log_conversation(event_listener_name, prompt, response, begin_time)
         # if not log_file: # Less verbose
@@ -293,21 +315,24 @@ def patch_gpt_handler():
         return response
 
     try:
-        if handler:
-            handler.ask_gpt = patched_ask_gpt
-            handler.ask_gpt_sync = patched_ask_gpt_sync
-            print("GPT handler patched successfully for logging.")
-        else:
-            print("Skipping GPT handler patching because handler instance is None.")
+        # Apply the patches
+        handler.ask_gpt = patched_ask_gpt
+        handler.ask_gpt_sync = patched_ask_gpt_sync
+        print("GPT handler patched successfully for logging.")
     except AttributeError as e:
          print(f"Failed to apply patches to GPT handler (AttributeError): {e}. Check if methods exist.")
     except Exception as e:
         print(f"Failed to apply patches to GPT handler: {e.__class__.__name__}: {e}")
 
 
-# --- run_event_listeners function moved from main.py ---
-async def run_event_listeners():
-    """Run the event listeners in the background."""
+# --- run_event_listeners function updated ---
+async def run_event_listeners(agent_manifest_data: Optional[Dict[str, Any]] = None):
+    """
+    Run the event listeners main function, passing manifest data.
+
+    Args:
+        agent_manifest_data: Optional dictionary containing agent manifest data.
+    """
     global log_directory # Ensure we use the module global
 
     print("Creating log directory (if needed)...")
@@ -328,47 +353,68 @@ async def run_event_listeners():
     try:
         # Ensure input_triggers_main is an async function if awaited
         if asyncio.iscoroutinefunction(input_triggers_main):
-            await input_triggers_main()
+            # Pass the agent_manifest_data to the main function
+            await input_triggers_main(agent_manifest_data=agent_manifest_data)
         else:
-             print("Warning: input_triggers_main is not an async function, running synchronously.")
-             input_triggers_main()
+             print("Error: input_triggers_main is not an async function and cannot be awaited.")
+             # Cannot easily pass data if it's not async and run in loop
+             # Consider making input_triggers_main async mandatory
+             # Or run it synchronously outside the loop (but that blocks)
+             # input_triggers_main() # Old way, cannot pass data easily here
         print("Event listeners finished.")
     except Exception as e:
         print(f"Error running event listeners main function: {e.__class__.__name__}: {e}")
+        import traceback
+        traceback.print_exc() # Print stack trace for debugging
 
 
-# --- start_event_listeners_thread function moved from main.py ---
-def start_event_listeners_thread():
-    """Start the event listeners in a separate thread."""
+# --- start_event_listeners_thread function updated ---
+def start_event_listeners_thread(agent_manifest_data: Optional[Dict[str, Any]] = None):
+    """
+    Start the event listeners in a separate thread, managing the event loop.
+
+    Args:
+        agent_manifest_data: Optional dictionary containing agent manifest data.
+    """
     print("Starting event listeners thread...")
     listener_loop = None
     try:
         # Create a new event loop for the thread
         listener_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(listener_loop)
-        listener_loop.run_until_complete(run_event_listeners())
+        # Pass agent_manifest_data to run_event_listeners
+        listener_loop.run_until_complete(run_event_listeners(agent_manifest_data=agent_manifest_data))
     except Exception as e:
         print(f"Error running asyncio event loop in thread: {e.__class__.__name__}: {e}")
+        import traceback
+        traceback.print_exc() # Print stack trace for debugging
     finally:
         if listener_loop:
             try:
                 # Gracefully stop the loop before closing
                 if listener_loop.is_running():
+                    # Gather pending tasks and cancel them before stopping
+                    tasks = asyncio.all_tasks(loop=listener_loop)
+                    for task in tasks:
+                        task.cancel()
+                    # Allow tasks to finish cancellation
+                    listener_loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
                     listener_loop.stop()
                 # Close the loop
                 listener_loop.close()
+                print("Event loop closed.")
             except Exception as loop_close_e:
                  print(f"Error closing event loop: {loop_close_e}")
         print("Event listener thread finished.")
 
 
-# --- New initialize_input_triggers function ---
-def initialize_input_triggers(agent_manifest_data, log_dir_abs_path) -> threading.Thread:
+# --- initialize_input_triggers function updated ---
+def initialize_input_triggers(agent_manifest_data: Optional[Dict[str, Any]], log_dir_abs_path: str) -> threading.Thread:
     """
     Initializes and starts the event listeners in a background thread.
 
     Args:
-        agent_manifest_data: The loaded agent manifest data (currently unused here, but available).
+        agent_manifest_data: The loaded agent manifest data.
         log_dir_abs_path: The absolute path to the main log directory.
 
     Returns:
@@ -377,13 +423,12 @@ def initialize_input_triggers(agent_manifest_data, log_dir_abs_path) -> threadin
     global log_directory # Set the module-level global for other functions here
     log_directory = log_dir_abs_path
 
-    # agent_manifest_data is passed in but not used in the moved code yet.
-    # It's available here if needed by listeners in the future.
     print(f"Initializing event listeners (using manifest: {'loaded' if agent_manifest_data else 'not loaded'}, log path: {log_directory})...")
 
-    # Logic moved from main.py lines 440-443
+    # Create the thread, passing agent_manifest_data to the target function
     listener_thread = threading.Thread(
         target=start_event_listeners_thread,
+        args=(agent_manifest_data,), # Pass manifest data as argument tuple
         daemon=True,
         name="EventListenerThread" # Give the thread a name
     )
