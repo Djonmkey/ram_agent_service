@@ -20,7 +20,7 @@ class DiscordBotTrigger(InputTrigger):
     """
 
     def __init__(self,
-                 agent_config_data: Dict[str, Any], # Changed: Accept full agent config
+                 agent_config_data: Dict[str, Any],
                  trigger_config_data: Optional[Dict[str, Any]] = None,
                  trigger_secrets: Optional[Dict[str, Any]] = None):
         """
