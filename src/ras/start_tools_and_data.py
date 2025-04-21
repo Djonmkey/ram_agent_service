@@ -153,8 +153,8 @@ def on_startup_dispatcher(agent_manifest_data: dict) -> None:
             command_data_relative_path = agent_config.get("mcp_commands_config_file")
             secrets_data_relative_path = agent_config.get("mcp_commands_secrets_file")
 
-            if not command_data_relative_path or not secrets_data_relative_path:
-                print(f"  ⚠️ Skipping MCP startup for agent '{agent_name}': Missing 'mcp_commands_config_file' or 'mcp_commands_secrets_file' path in agent config ({agent_config_absolute_path.name}).")
+            if not command_data_relative_path:
+                print(f"  ⚠️ Skipping MCP startup for agent '{agent_name}': No 'mcp_commands_config_file' found in agent config ({agent_config_absolute_path.resolve()}).")
                 continue
 
             # Resolve paths relative to project root
