@@ -100,7 +100,12 @@ class GmailEmailReceivedBot(InputTrigger):
         self.logger.info("Initializing Gmail API service...")
         try:
             self.service = self._authenticate_gmail_api()
-            self.logger.info("Gmail API service initialized successfully.")
+
+            if self.service:
+                self.logger.info("Gmail API service initialized successfully.")
+            else:
+                self.logger.error("Failed to initialize Gmail API service.")
+
         except Exception as e:
             self.logger.error(f"Error initializing Gmail service: {e}", exc_info=True)
             # Prevent starting if initialization fails critically
@@ -110,34 +115,108 @@ class GmailEmailReceivedBot(InputTrigger):
         """
         Authenticates the user with Gmail API using OAuth2 and returns the Gmail service object.
 
-        :return: Authorized Gmail service resource.
-        :rtype: googleapiclient.discovery.Resource
+        Handles token loading, refreshing, and the OAuth2 flow if necessary.
+
+        Returns:
+            Authorized Gmail service resource or None if authentication fails.
         """
         creds: Optional[Credentials] = None
+        # Define project root based on SRC_DIR (assuming SRC_DIR is correctly defined)
+        project_root = SRC_DIR.parent
 
-        access_token_file = self.trigger_config.get("access_token_file", DEFAULT_TOKEN_PATH)
+        # --- Get paths from config, using self.trigger_config ---
+        # Use .get with default values defined as constants
+        access_token_rel_path = self.trigger_config.get("access_token_file", DEFAULT_TOKEN_PATH)
+        client_secrets_rel_path = self.trigger_config.get("client_secrets_file", DEFAULT_CREDENTIALS_PATH)
 
-        if os.path.exists(access_token_file):
-            creds = Credentials.from_authorized_user_file(access_token_file, SCOPES)
+        # --- Resolve absolute paths using pathlib ---
+        access_token_abs_path = (project_root / access_token_rel_path).resolve()
+        client_secrets_abs_path = (project_root / client_secrets_rel_path).resolve()
 
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
+        self.logger.info(f"Attempting to load token from: {access_token_abs_path}")
+        self.logger.info(f"Using client secrets file: {client_secrets_abs_path}")
+
+        # --- Load existing credentials ---
+        if access_token_abs_path.exists():
+            try:
+                creds = Credentials.from_authorized_user_file(str(access_token_abs_path), SCOPES)
+                self.logger.info("Loaded existing credentials from token file.")
+            except Exception as e:
+                self.logger.warning(f"Failed to load credentials from {access_token_abs_path}: {e}. Will attempt re-authentication.")
+                creds = None # Ensure creds is None if loading fails
+
+        # --- Validate credentials and refresh if necessary ---
+        if creds and not creds.valid:
+            self.logger.info("Existing credentials are not valid.")
+            if creds.expired and creds.refresh_token:
+                self.logger.info("Attempting to refresh token...")
+                try:
+                    # Use google.auth.transport.requests.Request for refreshing
+                    from google.auth.transport.requests import Request
+                    creds.refresh(Request())
+                    self.logger.info("Token refreshed successfully.")
+                except Exception as e:
+                    self.logger.warning(f"Failed to refresh token: {e}. Proceeding with full re-authentication.")
+                    creds = None # Force re-auth if refresh fails
             else:
-                client_secrets_file = self.trigger_config.get("client_secrets_file", DEFAULT_CREDENTIALS_PATH)
+                self.logger.info("Credentials invalid and cannot be refreshed. Proceeding with full re-authentication.")
+                creds = None # Force re-auth
 
-                if os.path.exists(client_secrets_file):
-                    flow = InstalledAppFlow.from_client_secrets_file(client_secrets_file, SCOPES)
-                    creds = flow.run_local_server(port=0) 
-                else:
-                    self.logger.error(f"Client secrets file not found: {client_secrets_file}")
-                    return None
+        # --- Perform OAuth flow if no valid credentials ---
+        if not creds: # This covers None, invalid, or failed refresh
+            self.logger.info("No valid credentials found. Starting OAuth flow...")
+            if not client_secrets_abs_path.exists():
+                self.logger.error(f"Client secrets file not found: {client_secrets_abs_path}. Cannot proceed with authentication.")
+                return None # Critical error, cannot authenticate
 
-            with open(access_token_file, 'w') as token:
-                token.write(creds.to_json())
+            try:
+                flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets_abs_path), SCOPES)
+                # Run the local server flow
+                creds = flow.run_local_server(port=0,
+                                            prompt='consent', # Explicitly ask for consent each time if needed, or select_account
+                                            authorization_prompt_message='Please authorize this app via your browser: {url}')
+                self.logger.info("OAuth flow completed successfully.")
+            except FileNotFoundError:
+                # Should be caught by the exists() check above, but good defense
+                self.logger.error(f"Client secrets file disappeared during flow creation: {client_secrets_abs_path}")
+                return None
+            except Exception as e:
+                # Catch potential errors during run_local_server (e.g., port issues, user cancellation)
+                self.logger.error(f"Error during OAuth authorization flow: {e}", exc_info=True)
+                return None
 
-        service = build('gmail', 'v1', credentials=creds)
-        return service
+        # --- Save the credentials (if newly obtained or refreshed) ---
+        # Check if creds exist *and* if they are valid before saving
+        if creds and creds.valid:
+            try:
+                # Ensure parent directory exists before writing
+                access_token_abs_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(access_token_abs_path, 'w') as token:
+                    token.write(creds.to_json())
+                self.logger.info(f"Credentials saved to {access_token_abs_path}")
+            except IOError as e:
+                self.logger.error(f"Failed to save token file to {access_token_abs_path}: {e}")
+            except Exception as e:
+                self.logger.error(f"An unexpected error occurred while saving token: {e}")
+        elif creds and not creds.valid:
+            # This case might happen if refresh failed but we didn't nullify creds correctly earlier
+            self.logger.warning("Credentials obtained but are invalid. Not saving token.")
+
+
+        # --- Build and return the service ---
+        if creds and creds.valid:
+            try:
+                service = build('gmail', 'v1', credentials=creds)
+                self.logger.info("Gmail service built successfully.")
+                return service
+            except Exception as e:
+                self.logger.error(f"Failed to build Gmail service with obtained credentials: {e}", exc_info=True)
+                return None
+        else:
+            # This path is reached if creds are None initially and OAuth failed,
+            # or if refresh failed and OAuth failed, or if creds became invalid somehow.
+            self.logger.error("Failed to obtain valid credentials after all attempts.")
+            return None
 
     async def _check_emails(self):
         """Checks for new emails matching the criteria."""
