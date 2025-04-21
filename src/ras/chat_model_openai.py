@@ -7,7 +7,7 @@ import os
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Dict, Any, Optional
-from constants import MCP_COMMANDS_PATH
+
 
 class GPTRequest:
     """Represents a request to the GPT model."""
@@ -18,21 +18,34 @@ class GPTRequest:
 class GPTThreadHandler:
     """Handles GPT requests on a separate thread."""
     
-    def __init__(self):
-        # Load config from gpt.json
-        with open("event_listeners/gpt.json", "r") as f:
+    def __init__(self, agent_config_data: Dict[str, Any]):
+        # Load config
+        chat_model_config = agent_config_data["chat_model"]
+        chat_model_config_file = chat_model_config["chat_model_config_file"]
+        chat_model_secrets_file = chat_model_config["chat_model_secrets_file"]
+        chat_system_instructions_file = chat_model_config["chat_system_instructions_file"]
+        
+        # Load config from chat_model_config_file
+        with open(chat_model_config_file, "r") as f:
             config = json.load(f)
-            self.api_key = config["api_key"]
             self.model = config["model"]
             self.temperature = config.get("temperature", 0.7)
             self.max_tokens = config.get("max_tokens", 1000)
+
+        # Load config from chat_model_config_file
+        with open(chat_model_secrets_file, "r") as f:
+            config = json.load(f)
+            self.api_key = config["api_key"]
         
         # Load base system instructions
-        with open("event_listeners/gpt_system_instructions.txt", "r") as f:
+        with open(chat_system_instructions_file, "r") as f:
             base_instructions = f.read()
 
         # Load available MCP commands
-        with open(MCP_COMMANDS_PATH, "r") as f:
+        tools_and_data = agent_config_data["tools_and_data"]
+        command_data_path = tools_and_data.get("mcp_commands_config_file")
+
+        with open(command_data_path, "r") as f:
             command_data = json.load(f)
 
         # Format MCP commands for GPT, including optional response format
@@ -226,9 +239,9 @@ class GPTThreadHandler:
 # Singleton instance
 _gpt_handler = None
 
-def get_gpt_handler() -> GPTThreadHandler:
+def get_gpt_handler(agent_config_data: Dict[str, Any]) -> GPTThreadHandler:
     """Get the singleton instance of the GPTThreadHandler."""
     global _gpt_handler
     if _gpt_handler is None:
-        _gpt_handler = GPTThreadHandler()
+        _gpt_handler = GPTThreadHandler(agent_config_data)
     return _gpt_handler

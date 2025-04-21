@@ -1,0 +1,14 @@
+{
+    "agents": [
+        {
+            "name":"Kairos",
+            "description":"AI-powered Time Management Executive Assistant. It understands goals, projects, budgets, tasks, and hours logged—working.  It keeps you focused, aligned, and on track. Whether you're planning the week, evaluating progress, or staying accountable, it ensures your time is spent where it matters most.",
+            "agent_config_file":"config/agents/executive_assistant/kairos_config.json"
+        },
+        {
+            "name":"Mercurius",
+            "description":"Mercurius is your AI-driven Job Offer Agent. It monitors your inbox for job opportunities, intelligently evaluates each message, and drafts personalized responses aligned with your preferences and professional goals. Each draft includes your most recent resume as an attachment, ensuring a complete and timely reply. You’re only notified when a response is ready — saving you time while staying responsive to every opportunity.",
+            "agent_config_file":"config/agents/gmail_job_offer_responder/mercurius_config.json"
+        }
+    ]
+}
