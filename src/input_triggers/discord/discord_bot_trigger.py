@@ -77,6 +77,22 @@ class DiscordBotTrigger(InputTrigger):
     def name(self) -> str:
         return "DiscordBotTrigger"
 
+    async def send_long_message(self, message_content: str, channel, max_length: int = 2000) -> None:
+        """
+        Sends a message to a Discord channel, splitting it into chunks if it exceeds max_length.
+
+        :param message_content: The full string content to send.
+        :param channel: The Discord channel to send the message to.
+        :param max_length: The maximum length of a single Discord message (default is 2000).
+        """
+        if len(message_content) <= max_length:
+            await channel.send(message_content)
+        else:
+            for i in range(0, len(message_content), max_length):
+                chunk = message_content[i:i + max_length]
+                await channel.send(chunk)
+                await asyncio.sleep(1)
+                
     def _register_event_handlers(self):
         """Registers handlers for Discord client events."""
         @self.client.event
