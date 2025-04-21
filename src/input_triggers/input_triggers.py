@@ -1,4 +1,5 @@
 # src/input_triggers/input_triggers.py
+import re
 import json
 import os
 import sys
@@ -17,9 +18,9 @@ if str(SRC_DIR) not in sys.path:
 # Assuming constants are defined relative to src or configured
 # If constants.py is in src: from constants import ...
 # Otherwise, make these paths configurable
-DEFAULT_MCP_COMMANDS_PATH = SRC_DIR / "mcp_commands" / "commands.json"
-DEFAULT_MCP_SECRETS_PATH = SRC_DIR / "mcp_commands" / "secrets.json"
-DEFAULT_MCP_MODULES_DIR = SRC_DIR / "mcp_commands"
+DEFAULT_MCP_COMMANDS_PATH = SRC_DIR / "tools_and_data" / "commands.json"
+DEFAULT_MCP_SECRETS_PATH = SRC_DIR / "tools_and_data" / "secrets.json"
+DEFAULT_MCP_MODULES_DIR = ""
 
 from ras.chat_model_openai import get_gpt_handler
 
@@ -55,8 +56,8 @@ class InputTrigger(ABC):
 
         # Get configurable paths from the trigger-specific config, falling back to defaults
         # Note: We now use self.trigger_config instead of self.config
-        self.mcp_commands_path = Path(self.trigger_config.get("mcp_commands_path", DEFAULT_MCP_COMMANDS_PATH))
-        self.mcp_secrets_path = Path(self.trigger_config.get("mcp_secrets_path", DEFAULT_MCP_SECRETS_PATH))
+        self.mcp_commands_path = Path(self.agent_config_data["tools_and_data"].get("mcp_commands_config_file", DEFAULT_MCP_COMMANDS_PATH))
+        self.mcp_secrets_path = Path(self.agent_config_data["tools_and_data"].get("mcp_commands_secrets_file", DEFAULT_MCP_SECRETS_PATH))
         self.mcp_modules_dir = Path(self.trigger_config.get("mcp_modules_dir", DEFAULT_MCP_MODULES_DIR))
 
         self.logger.debug(f"Base trigger initialized for Agent '{self.agent_name}', Trigger '{self.name}'")
@@ -132,6 +133,9 @@ class InputTrigger(ABC):
         message_text_lower = message_text.lower().strip() # Case-insensitive check
         try:
             for cmd in command_data.get("mcp_commands", []):
+                if cmd.get("enabled") is False:
+                    continue
+
                 system_text = cmd.get("system_text")
                 if system_text and system_text.lower() in message_text_lower:
                     self.logger.debug(f"Found command '{system_text}' in message.")
@@ -185,7 +189,7 @@ class InputTrigger(ABC):
                 None
             )
             if not secret_entry:
-                self.logger.warning(f"Missing secrets entry for module: {module_path_str} in {self.mcp_secrets_path}")
+                self.logger.warning(f"⚠️ Missing secrets entry for module: {module_path_str} in {self.mcp_secrets_path}")
                 internal_params = common_params # Use only common if specific are missing
             else:
                 # Merge common with specific, specific taking precedence
@@ -206,7 +210,7 @@ class InputTrigger(ABC):
                 # Pass MCP internal params. Trigger secrets (self.trigger_secrets) are available
                 # within the trigger instance if needed by the trigger logic itself, but not
                 # typically passed directly to MCP command handlers unless designed that way.
-                result = handler({}, internal_params)
+                result = handler(matched_cmd["command_parameters"], internal_params)
                 self.logger.info(f"✅ MCP Command '{command_text}' result received.")
                 return str(result) # Ensure result is string
             else:
@@ -234,10 +238,13 @@ class InputTrigger(ABC):
         if not command_data:
             return "Error: Could not load MCP command configuration for processing."
 
-        # Get all defined command system_texts
+        # Get all defined command system_texts where the command is enabled
         all_commands = [
-            cmd["system_text"] for cmd in command_data.get("mcp_commands", []) if "system_text" in cmd
+            cmd["system_text"]
+            for cmd in command_data.get("mcp_commands", [])
+            if cmd.get("enabled") and "system_text" in cmd
         ]
+
         # Sort by length descending to match longer commands first
         all_commands.sort(key=len, reverse=True)
 
@@ -272,9 +279,22 @@ class InputTrigger(ABC):
         self.logger.debug("Formatted new prompt with MCP command results.")
         return new_prompt
 
+    def escape_system_text_with_command_escape_text(self, response: str) -> Optional[str]:
+        """
+        Strips any trailing slash-prefixed commands (e.g., /list_my_goals) from a response string.
 
-    # --- AI Agent Interaction (no changes needed here) ---
-    # ... (rest of the AI methods remain the same) ...
+        If the entire string only contains commands or whitespace, returns an empty string.
+
+        :param response: The response text potentially containing trailing commands.
+        :return: The cleaned response string with commands removed, or an empty string if only commands were present.
+        """
+        # Strip leading/trailing whitespace for consistent behavior
+        response = response.strip()
+
+        # TODO: Replace system_text found with command_escape_text, which defaults to '(in progress…)'
+        
+        return response.strip()
+    
     def _execute_ai_agent_async(self,
                                 initial_query: str,
                                 callback: Callable[[str], None],
@@ -310,6 +330,11 @@ class InputTrigger(ABC):
             self.logger.debug(f"AI Agent response received (Depth: {recursion_depth}). Starts with: {response[:100]}...")
             # Check if the response contains an MCP command
             if self.contains_command(response):
+                immediate_response = self.escape_system_text_with_command_escape_text(response)
+
+                # Chat back that we are still processing
+                callback(immediate_response)
+                
                 self.logger.info(f"AI response contains MCP command(s). Processing... (Depth: {recursion_depth})")
                 # Generate the new prompt with command results
                 next_prompt = self._process_mcp_commands(response, initial_query)
