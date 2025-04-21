@@ -5,9 +5,11 @@ import sys
 import json
 from datetime import datetime
 import threading
-from pathlib import Path # <-- Make sure pathlib is imported
+from pathlib import Path 
 import time
 import argparse
+
+from work_queue_manager import start_all_queue_workers
 
 # --- BEGIN: Add src directory to sys.path ---
 # Determine the absolute path to the 'src' directory
@@ -142,6 +144,9 @@ if __name__ == "__main__":
     except OSError as e:
         print(f"⚠️ Warning: Could not ensure base log directory {abs_log_directory}: {e}")
         # Continue execution, but logging might fail later
+
+    # Start the Queue Manager
+    start_all_queue_workers()
 
     # Call the function from start_input_triggers.py with the FILTERED manifest data
     listener_thread = None
