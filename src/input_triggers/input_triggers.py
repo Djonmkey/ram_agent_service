@@ -326,7 +326,7 @@ class InputTrigger(ABC):
         self.logger.info(f"Executing AI Agent (Depth: {recursion_depth}). Prompt starts with: {prompt_to_send[:100]}...")
 
         # Define the callback that GPT handler will call
-        def gpt_handler_callback(response: str):
+        async def gpt_handler_callback(response: str):
             self.logger.debug(f"AI Agent response received (Depth: {recursion_depth}). Starts with: {response[:100]}...")
             # Check if the response contains an MCP command
             if self.contains_command(response):
@@ -343,7 +343,13 @@ class InputTrigger(ABC):
             else:
                 # No commands, this is the final answer
                 self.logger.info(f"AI Agent processing complete (Depth: {recursion_depth}). Calling final callback.")
-                callback(response)
+
+                if asyncio.iscoroutinefunction(callback):
+                    # If it's an async function, await it
+                    await callback(response)
+                else:
+                    # If it's a regular function, just call it
+                    callback(response)
 
         # Make the asynchronous call to the GPT handler
         try:

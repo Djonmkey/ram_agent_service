@@ -59,17 +59,6 @@ class DiscordBotOutputAction:
             # Catch other potential errors
             print(f"An unexpected error occurred during message sending to {channel.id}: {e}")
 
-    async def send_reply(self, ctx: commands.Context, content: str, max_length: int = 2000) -> None:
-        """
-        Sends a reply within the context of a command, handling potential length limits.
-
-        Args:
-            ctx: The command context provided by discord.py.
-            content: The string content of the reply.
-            max_length: The maximum length for a single Discord message chunk.
-        """
-        # Commands context's channel attribute is Messageable
-        await self.send_message(ctx.channel, content, max_length)
 
     async def delete_message(self, message: discord.Message) -> None:
         """

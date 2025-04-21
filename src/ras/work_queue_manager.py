@@ -13,7 +13,8 @@ import threading
 import queue
 import json
 import importlib
-from typing import Callable
+
+from typing import Callable, Dict, Any
 
 
 # Global thread-safe work queues
@@ -23,14 +24,18 @@ output_action_queue: queue.Queue[str] = queue.Queue()
 tools_and_data_queue: queue.Queue[str] = queue.Queue()
 
 
-def enqueue_chat_model(agent_name: str, contents: str) -> None:
+def enqueue_chat_model(agent_name: str, contents: Dict[str, Any]) -> None:
     """
     Enqueue work for the chat model queue.
 
     :param agent_name: Name of the agent submitting the task
     :param contents: A JSON string describing the task
     """
-    chat_model_queue.put(contents)
+    contents["agent_name"] = agent_name
+
+    json_string = json.dumps(contents)
+    
+    chat_model_queue.put(json_string)
 
 
 def enqueue_input_trigger(agent_name: str, contents: str) -> None:

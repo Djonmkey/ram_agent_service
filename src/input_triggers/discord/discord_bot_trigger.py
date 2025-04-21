@@ -1,4 +1,5 @@
 # src/input_triggers/discord/discord_bot_trigger.py
+import json
 import asyncio
 import discord
 import logging
@@ -12,6 +13,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from input_triggers.input_triggers import InputTrigger
+from ras import work_queue_manager
 
 class DiscordBotTrigger(InputTrigger):
     """
@@ -114,12 +116,33 @@ class DiscordBotTrigger(InputTrigger):
             # Immediately respond to prevent timeout
             ack_message = await message.channel.send("Working on it...")
 
+            input_trigger_content = {
+                "content": message.content,
+                "timestamp": message.created_at.isoformat(),
+                "meta_data": {
+                    "message_id": message.id,
+                    "ack_message_id": ack_message.id,
+                    "channel_id": message.channel.id,
+                    "guild_id": message.guild.id if message.guild else None,
+                    "author_id": message.author.id,
+                    "author_name": str(message.author)
+                }
+            }
+
+            agent_name = self.agent_config_data["name"]
+
+            work_queue_manager.enqueue_chat_model(agent_name, input_trigger_content)
+            
+            """
             async def handle_long_task():
                 response_future = asyncio.Future()
 
-                def set_response(result):
-                    if self.loop and not self.loop.is_closed():
-                        self.loop.call_soon_threadsafe(response_future.set_result, result)
+                async def set_response(result):
+                    # Send the final response
+                    if agent_response:
+                        await self.send_long_message(agent_response, message.channel)
+                    else:
+                        await message.channel.send("Sorry, I couldn't generate a response.")
 
                 # Queue the GPT request on a separate thread
                 self._execute_ai_agent_async(message.content, set_response)
@@ -141,6 +164,7 @@ class DiscordBotTrigger(InputTrigger):
 
             # Run the long task in the background
             asyncio.create_task(handle_long_task())
+            """
 
 
         @self.client.event

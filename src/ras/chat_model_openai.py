@@ -70,10 +70,14 @@ class GPTThreadHandler:
         self.executor = ThreadPoolExecutor(max_workers=4)
         
         # Start the worker thread
-        self.worker_thread = threading.Thread(target=self._process_queue, daemon=True)
+        def _start_async_worker(self):
+            asyncio.run(self._process_queue())
+
+        self.worker_thread = threading.Thread(target=self._start_async_worker, daemon=True)
         self.worker_thread.start()
     
-    def _process_queue(self):
+    
+    async def _process_queue(self):
         """Process requests from the queue in a separate thread."""
         while True:
             try:
@@ -89,7 +93,7 @@ class GPTThreadHandler:
             finally:
                 self.request_queue.task_done()
     
-    def _process_request(self, request: GPTRequest):
+    async def _process_request(self, request: GPTRequest):
         """Process a single GPT request."""
         try:
             # Ensure there's an event loop available in this thread
@@ -104,7 +108,12 @@ class GPTThreadHandler:
             
             # If a callback was provided, call it with the response
             if request.callback:
-                request.callback(response)
+                if asyncio.iscoroutinefunction(request.callback(response)):
+                    # If it's an async function, await it
+                    await request.callback(response)
+                else:
+                    # If it's a regular function, just call it
+                    request.callback(response)
                 
         except Exception as e:
             print(f"Error processing GPT request: {e}")
