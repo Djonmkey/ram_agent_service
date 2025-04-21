@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 
-def read_markdown_files_as_string(command_parameters: Dict[str, Any], internal_params: Dict[str, Any]) -> str:
+def execute_command(command_parameters: Dict[str, Any], internal_params: Dict[str, Any]) -> str:
     """
     Reads all Markdown (or specified) files from a directory and concatenates them into a single string.
     Each file's content is separated by a Markdown comment indicating the file name.
