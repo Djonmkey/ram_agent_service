@@ -1,9 +1,11 @@
 # src/input_triggers/gmail/gmail_email_received_bot.py
-import asyncio
-import base64
-import time
 import os
+import time
+import json
+import base64
+import asyncio
 import logging
+
 from typing import Optional, Dict, Any, List
 
 # Google API Client Libraries
@@ -35,6 +37,47 @@ DEFAULT_CREDENTIALS_PATH = "secrets/gmail_credentials.json"
 # Default polling interval (can be overridden in trigger config)
 DEFAULT_POLLING_INTERVAL_SECONDS = 60
 
+def perform_oauth_flow(
+        client_secrets_path: Path,
+        scopes: List[str],
+        logger: Optional[logging.Logger] = None,
+    ) -> Optional[Credentials]:
+    """
+    Executes the OAuth authorization flow using the specified client secrets file and scopes.
+
+    Args:
+        client_secrets_path (Path): Path to the OAuth 2.0 client secrets JSON file.
+        scopes (List[str]): List of OAuth scopes to request.
+        logger (Optional[logging.Logger]): Logger instance for logging messages.
+
+    Returns:
+        Optional[Credentials]: The authorized credentials object if successful, otherwise None.
+    """
+    try:
+        if not client_secrets_path.exists():
+            if logger:
+                logger.error(f"Client secrets file not found: {client_secrets_path}")
+            return None
+
+        flow = InstalledAppFlow.from_client_secrets_file(
+            str(client_secrets_path),
+            scopes=scopes
+        )
+
+        creds = flow.run_local_server(
+            port=0,
+            prompt='consent',
+            authorization_prompt_message='Please authorize this app via your browser: {url}'
+        )
+
+        if logger:
+            logger.info("OAuth flow completed successfully.")
+        return creds
+
+    except Exception as e:
+        if logger:
+            logger.error(f"Error during OAuth flow: {e}", exc_info=True)
+        return None
 
 class GmailEmailReceivedBot(InputTrigger):
     """
@@ -110,7 +153,8 @@ class GmailEmailReceivedBot(InputTrigger):
             self.logger.error(f"Error initializing Gmail service: {e}", exc_info=True)
             # Prevent starting if initialization fails critically
             raise RuntimeError(f"Failed to initialize Gmail service: {e}")
-
+        
+        
     def _authenticate_gmail_api(self):
         """
         Authenticates the user with Gmail API using OAuth2 and returns the Gmail service object.
@@ -170,11 +214,7 @@ class GmailEmailReceivedBot(InputTrigger):
                 return None # Critical error, cannot authenticate
 
             try:
-                flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets_abs_path), SCOPES)
-                # Run the local server flow
-                creds = flow.run_local_server(port=0,
-                                            prompt='consent', # Explicitly ask for consent each time if needed, or select_account
-                                            authorization_prompt_message='Please authorize this app via your browser: {url}')
+                creds = perform_oauth_flow(client_secrets_abs_path, SCOPES, self.logger)
                 self.logger.info("OAuth flow completed successfully.")
             except FileNotFoundError:
                 # Should be caught by the exists() check above, but good defense
