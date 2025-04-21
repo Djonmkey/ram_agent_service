@@ -22,7 +22,7 @@ except ImportError as e:
 # Import for type hinting and potentially for determine_caller_name
 # Use TYPE_CHECKING to avoid circular imports if chat_thread imports this module indirectly
 if TYPE_CHECKING:
-    from .chat_thread import GPTThreadHandler # Assuming singleton removed from chat_thread
+    from .chat_model_openai import GPTThreadHandler # Assuming singleton removed from chat_thread
 try:
     # Attempt to import for runtime checks in determine_caller_name
     # This helps identify the trigger instance calling the patched method
