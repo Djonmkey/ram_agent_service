@@ -18,7 +18,7 @@ from ras.agent_config_buffer import get_agent_name_list, get_agent_config
 
 # Now imports relative to src should work if sys.path is configured correctly
 from input_triggers.input_triggers import InputTrigger
-from ras.chat_model_openai import get_gpt_handler
+from src.chat_models.chat_model_openai import get_gpt_handler
 
 # Use logging instead of print for better control
 logger = logging.getLogger(__name__)

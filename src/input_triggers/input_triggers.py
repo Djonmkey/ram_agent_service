@@ -22,7 +22,7 @@ DEFAULT_MCP_COMMANDS_PATH = SRC_DIR / "tools_and_data" / "commands.json"
 DEFAULT_MCP_SECRETS_PATH = SRC_DIR / "tools_and_data" / "secrets.json"
 DEFAULT_MCP_MODULES_DIR = ""
 
-from ras.chat_model_openai import get_gpt_handler
+from src.chat_models.chat_model_openai import get_gpt_handler
 
 
 class InputTrigger(ABC):
