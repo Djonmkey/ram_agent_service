@@ -9,7 +9,8 @@ from typing import List, Dict, Any, Optional, Type
 from pathlib import Path
 import pathlib
 
-from ras import work_queue_manager
+import ras.work_queue_manager 
+from ras.agent_config_buffer import get_agent_name_list, get_agent_config
 
 # --- Removed PROJECT_ROOT and SRC_DIR definition ---
 # It's assumed that the main application entry point (e.g., main.py)
@@ -299,7 +300,7 @@ async def _load_and_initialize_single_trigger(
          return False
 
 
-async def load_input_triggers(agent_manifest_data: Dict[str, Any]):
+async def load_input_triggers():
     """
     Load and initialize input triggers specified in agent configuration files
     listed in the agent manifest.
@@ -312,49 +313,14 @@ async def load_input_triggers(agent_manifest_data: Dict[str, Any]):
     listeners = {} # Clear any previous listeners
 
     logger.info("Loading input triggers based on agent manifest...")
-
-    if not agent_manifest_data or "agents" not in agent_manifest_data:
-        logger.error("Agent manifest data is missing or does not contain an 'agents' list.")
-        return
-
     loaded_listener_count = 0
     processed_agents = 0
 
-    for agent_info in agent_manifest_data.get("agents", []):
+    for agent_name in get_agent_name_list():
         processed_agents += 1
-        agent_name = agent_info.get("name", f"Agent_{processed_agents}") # Use name or generate one
-        config_file_relative = agent_info.get("agent_config_file")
-
-        if not config_file_relative:
-            logger.warning(f"Agent '{agent_name}' is missing the 'agent_config_file' key in the manifest. Skipping.")
-            continue
-
-        # --- Resolve agent config path relative to project root ---
-        try:
-            config_file_absolute = _resolve_path_relative_to_project_root(config_file_relative)
-        except (ValueError, Exception) as e:
-            logger.error(f"  ❌ ERROR: Could not resolve agent config path '{config_file_relative}' for agent '{agent_name}': {e}", exc_info=True)
-            continue # Skip this agent
-
-        logger.info(f"\nProcessing Agent: '{agent_name}'")
-        logger.info(f"  Attempting to load agent config (Resolved): {config_file_absolute}")
 
         # Load the agent-specific configuration JSON using the helper
-        agent_config_data = _load_json_file(config_file_absolute, f"Agent '{agent_name}' Config")
-        if agent_config_data is None:
-            continue # Error already logged
-
-        # Ensure agent name from config matches manifest/generated name (or update if needed)
-        # This assumes the agent config *also* has a "name" field.
-        config_agent_name = agent_config_data.get("name")
-        if config_agent_name and config_agent_name != agent_name:
-             logger.warning(f"  Agent name mismatch: Manifest/Generated='{agent_name}', Config='{config_agent_name}'. Using '{agent_name}'.")
-             # Ensure the agent_config_data used later has the consistent name
-             agent_config_data["name"] = agent_name
-        elif not config_agent_name:
-             logger.warning(f"  Agent config file {config_file_absolute} is missing the 'name' key. Using '{agent_name}'.")
-             agent_config_data["name"] = agent_name # Add it for consistency
-
+        agent_config_data =  get_agent_config(agent_name)
 
         # Load input triggers specified in this agent's config
         input_triggers_list = agent_config_data.get("input_triggers", [])
@@ -450,7 +416,7 @@ async def stop_event_listeners():
             logger.error(f"ERROR: An unexpected error occurred during listener shutdown: {e}", exc_info=True)
 
 
-async def main(agent_manifest_data: Dict[str, Any]): # Manifest is now required
+async def main(): # Manifest is now required
     """
     Main entry point for the input triggers system.
     Loads, starts, and manages event listeners based on the agent manifest.
@@ -460,7 +426,7 @@ async def main(agent_manifest_data: Dict[str, Any]): # Manifest is now required
     """
     try:
         # Load listeners using the new manifest-driven logic
-        await load_input_triggers(agent_manifest_data) # Pass the manifest
+        await load_input_triggers() # Pass the manifest
 
         # Start whatever listeners were successfully loaded
         await start_input_triggers()
