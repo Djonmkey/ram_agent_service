@@ -267,7 +267,7 @@ def patch_gpt_handler(handler: 'GPTThreadHandler'):
 
 
 # --- MODIFIED: run_event_listeners function ---
-async def run_event_listeners(agent_manifest_data: Dict[str, Any]):
+async def run_event_listeners():
     """
     Runs the main input trigger logic (from input_triggers_main).
     Global patching is REMOVED from here.
@@ -296,10 +296,10 @@ async def run_event_listeners(agent_manifest_data: Dict[str, Any]):
         # handler creation, patching (using the patch_gpt_handler above),
         # and listener setup.
         if asyncio.iscoroutinefunction(input_triggers_main):
-            await input_triggers_main(agent_manifest_data=agent_manifest_data)
+            await input_triggers_main()
         else:
              print("Warning: input_triggers_main is not async. Running synchronously.")
-             input_triggers_main(agent_manifest_data=agent_manifest_data)
+             input_triggers_main()
 
         print("Event listeners main function finished.")
     except Exception as e:
@@ -310,14 +310,14 @@ async def run_event_listeners(agent_manifest_data: Dict[str, Any]):
 
 # --- start_event_listeners_thread function (Conceptually Unchanged) ---
 # Starts the thread that runs run_event_listeners.
-def start_event_listeners_thread(agent_manifest_data: Optional[Dict[str, Any]] = None):
+def start_event_listeners_thread():
     """Starts the event listeners in a separate thread."""
     print("Starting event listeners thread...")
     listener_loop = None
     try:
         listener_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(listener_loop)
-        listener_loop.run_until_complete(run_event_listeners(agent_manifest_data=agent_manifest_data))
+        listener_loop.run_until_complete(run_event_listeners())
     except Exception as e:
         print(f"Error running asyncio event loop in thread: {e.__class__.__name__}: {e}")
         import traceback
@@ -354,7 +354,7 @@ def start_event_listeners_thread(agent_manifest_data: Optional[Dict[str, Any]] =
 # --- initialize_input_triggers function (Conceptually Unchanged) ---
 # Sets the global log directory and starts the listener thread.
 # Added check to return None if no agents are enabled.
-def initialize_input_triggers(agent_manifest_data: Optional[Dict[str, Any]], log_dir_abs_path: str) -> Optional[threading.Thread]:
+def initialize_input_triggers(log_dir_abs_path: str) -> Optional[threading.Thread]:
     """
     Initializes and starts the event listeners in a background thread.
 
@@ -368,17 +368,10 @@ def initialize_input_triggers(agent_manifest_data: Optional[Dict[str, Any]], log
     global log_directory
     log_directory = log_dir_abs_path
 
-    # Check if there are any agents to process before starting thread
-    enabled_agents = agent_manifest_data.get("agents") if agent_manifest_data else None
-    if not enabled_agents:
-        print("No enabled agents found in manifest. Skipping input trigger initialization.")
-        return None # Indicate no thread was started
-
-    print(f"Initializing event listeners (for {len(enabled_agents)} agents, log path: {log_directory})...")
+    print(f"Initializing Input Triggers...")
 
     listener_thread = threading.Thread(
         target=start_event_listeners_thread,
-        args=(agent_manifest_data,),
         daemon=True,
         name="EventListenerThread"
     )
