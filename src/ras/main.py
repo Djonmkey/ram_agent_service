@@ -9,7 +9,8 @@ from pathlib import Path
 import time
 import argparse
 
-from work_queue_manager import start_all_queue_workers
+from ras.work_queue_manager import start_all_queue_workers
+from ras.agent_config_buffer import load_agent_manifest, get_agent_name_list
 
 # --- BEGIN: Add src directory to sys.path ---
 # Determine the absolute path to the 'src' directory
@@ -34,7 +35,7 @@ log_directory = os.path.join(os.path.dirname(__file__), 'logs')
 # current_conversations moved to start_input_triggers.py
 
 if __name__ == "__main__":
-    # --- Agent Manifest Loading ---
+    # --- Agent Manifest File Loading ---
     parser = argparse.ArgumentParser(description="Run the RAM Agent Service.")
     parser.add_argument(
         'manifest_file',
@@ -51,16 +52,13 @@ if __name__ == "__main__":
 
     print(f"Attempting to load agent manifest from: {manifest_path_absolute}")
 
-    agent_manifest_data = None
     if not os.path.exists(manifest_path_absolute):
         print(f"❌ ERROR: Agent manifest file not found at the expected location: {manifest_path_absolute}")
         print("Exiting due to missing agent manifest.")
         sys.exit(1)
     else:
         try:
-            with open(manifest_path_absolute, 'r', encoding='utf-8') as f:
-                agent_manifest_data = json.load(f)
-            print("✅ Agent manifest loaded successfully.")
+            load_agent_manifest(manifest_path_absolute)
         except json.JSONDecodeError as e:
             print(f"❌ ERROR: Failed to parse agent manifest file '{manifest_path_absolute}': {e}")
             print("Exiting due to invalid agent manifest.")
@@ -76,59 +74,12 @@ if __name__ == "__main__":
 
     # --- End of Agent Manifest Loading ---
 
-    # --- Filter Agents based on 'enabled' flag ---
-    filtered_manifest_data = None
-    if agent_manifest_data:
-        original_agents = agent_manifest_data.get("agents")
-
-        if original_agents is None:
-            print("❌ ERROR: Manifest is missing the 'agents' list key.")
-            sys.exit(1)
-        elif not isinstance(original_agents, list):
-             print(f"❌ ERROR: Manifest 'agents' key is not a list (type: {type(original_agents).__name__}).")
-             sys.exit(1)
-        else:
-            enabled_agents = []
-            print("\nFiltering agents based on 'enabled' flag:")
-            for agent_config in original_agents:
-                # Ensure agent_config is a dictionary before proceeding
-                if not isinstance(agent_config, dict):
-                    print(f"  ⚠️ Skipping invalid agent entry (not a dictionary): {agent_config}")
-                    continue
-
-                agent_name = agent_config.get("name", "Unnamed Agent")
-                # Treat agent as enabled only if "enabled" key exists and is explicitly True
-                if agent_config.get("enabled") is True:
-                    print(f"  ✅ Enabling agent: {agent_name}")
-                    enabled_agents.append(agent_config)
-                else:
-                    # This covers cases where "enabled" is false, null, missing, or any other value
-                    print(f"  ➖ Skipping disabled agent: {agent_name}")
-
-            # Create a new manifest structure containing only the enabled agents,
-            # but preserving other top-level keys (like 'secrets').
-            filtered_manifest_data = agent_manifest_data.copy()
-            filtered_manifest_data["agents"] = enabled_agents
-
-            if not enabled_agents:
-                print("\n⚠️ No enabled agents found in the manifest. No input triggers will be started.")
-            else:
-                 print(f"\nProceeding with {len(enabled_agents)} enabled agent(s).")
-
-    else:
-        # This case should technically not be reached due to earlier exit calls,
-        # but added for robustness.
-        print("⚠️ Agent manifest data was not loaded. Cannot initialize triggers.")
-        sys.exit(1)
-    # --- End of Agent Filtering ---
-
-
     print("\nExecuting MCP startup dispatcher...")
     try:
         # Pass the original manifest data to startup dispatcher, as it might need
         # info about all potential commands/secrets, not just enabled agents.
         # Adjust if startup dispatcher should only know about enabled agents.
-        on_startup_dispatcher(agent_manifest_data)
+        on_startup_dispatcher()
         print("MCP startup dispatcher finished.")
     except Exception as e:
         print(f"❌ Error during MCP startup: {e}")
@@ -150,8 +101,8 @@ if __name__ == "__main__":
 
     # Call the function from start_input_triggers.py with the FILTERED manifest data
     listener_thread = None
-    if filtered_manifest_data and filtered_manifest_data.get("agents"):
-        listener_thread = initialize_input_triggers(filtered_manifest_data, abs_log_directory)
+    if get_agent_name_list():
+        listener_thread = initialize_input_triggers(abs_log_directory)
     else:
         print("Skipping input trigger initialization as there are no enabled agents.")
     # --- End of listener initialization ---
