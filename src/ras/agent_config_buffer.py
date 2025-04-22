@@ -10,7 +10,7 @@ import os
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Optional, Any
+from typing import Dict, Any, List
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -60,6 +60,7 @@ def set_agent_config(agent_name: str, agent_config: Dict[str, Any]) -> None:
         agent_name: Name of the agent
         agent_config: Dictionary containing agent configuration
     """
+    agent_config["name"] = agent_name # backup in case the name isn't also set in the file.
     json_string = json.dumps(agent_config)
     global_agent_config[agent_name] = json_string
 
@@ -262,7 +263,7 @@ def load_text_file(file_path: str) -> str:
         raise
 
 
-def resolve_path(base_path: Path, file_path: str) -> Path:
+def resolve_path(base_path: Path, file_path: str) -> str:
     """
     Resolve file path relative to base path if it's not absolute
     
@@ -274,9 +275,14 @@ def resolve_path(base_path: Path, file_path: str) -> Path:
         Resolved Path object
     """
     path = Path(file_path)
+
+    if path.exists():
+        return str(path)
+
     if path.is_absolute():
-        return path
-    return base_path / path
+        return str(path)
+    
+    return str(base_path / path)
 
 
 def load_agent_manifest(manifest_path: str) -> None:
@@ -308,7 +314,7 @@ def load_agent_manifest(manifest_path: str) -> None:
 
             # Load and store the agent configuration
             agent_config_path = resolve_path(base_path, agent["agent_config_file"])
-            agent_config = load_json_file(str(agent_config_path))
+            agent_config = load_json_file(agent_config_path)
             set_agent_config(agent_name, agent_config)
 
             # Optional: tools_and_data
@@ -355,3 +361,12 @@ def load_agent_manifest(manifest_path: str) -> None:
     except Exception as e:
         logger.error(f"Error loading agent manifest: {str(e)}")
         raise
+
+def get_agent_name_list() -> List[str]:
+    """
+    Retrieve all agent names (keys) from the global agent manifest.
+
+    :return: A list of agent names.
+    :rtype: List[str]
+    """
+    return list(global_agent_manifest_entry.keys())
