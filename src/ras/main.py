@@ -57,7 +57,7 @@ if __name__ == "__main__":
         sys.exit(1)
     else:
         try:
-            load_agent_manifest(manifest_path_absolute)
+            load_agent_manifest(str(manifest_path_absolute))
         except json.JSONDecodeError as e:
             print(f"❌ ERROR: Failed to parse agent manifest file '{manifest_path_absolute}': {e}")
             print("Exiting due to invalid agent manifest.")
