@@ -9,9 +9,6 @@ from pathlib import Path
 import time
 import argparse
 
-from ras.work_queue_manager import start_all_queue_workers
-from ras.agent_config_buffer import load_agent_manifest, get_agent_name_list
-
 # --- BEGIN: Add src directory to sys.path ---
 # Determine the absolute path to the 'src' directory
 # Assumes this file is located at src/ras/main.py
@@ -26,6 +23,8 @@ if str(SRC_DIR) not in sys.path:
 # --- END: Add src directory to sys.path ---
 
 # Now imports relative to src should work everywhere
+from ras.work_queue_manager import start_all_queue_workers
+from ras.agent_config_buffer import load_agent_manifest, get_agent_name_list
 from ras.start_tools_and_data import on_startup_dispatcher # Use explicit relative or absolute
 from ras.start_input_triggers import initialize_input_triggers # Use explicit relative or absolute
 
@@ -144,4 +143,3 @@ if __name__ == "__main__":
 
     # --- UI Creation and mainloop Removed ---
     # TODO: Start HTTP service for UI
-
