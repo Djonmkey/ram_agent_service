@@ -131,7 +131,7 @@ class DiscordBotTrigger(InputTrigger):
 
             agent_name = self.agent_config_data["name"]
 
-            work_queue_manager.enqueue_chat_model(agent_name, input_trigger_content)
+            work_queue_manager.enqueue_input_trigger(agent_name, input_trigger_content)
             
             """
             async def handle_long_task():

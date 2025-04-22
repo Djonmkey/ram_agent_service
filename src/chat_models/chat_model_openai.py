@@ -1,13 +1,23 @@
+
+import sys
 import openai
 import json
 import threading
 import queue
 import asyncio
 import os
+from pathlib import Path 
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Dict, Any, Optional
 
+SRC_DIR = Path(__file__).resolve().parent.parent
+
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from ras.agent_config_buffer import get_chat_model_system_instructions, get_tools_and_data_mcp_commands_config, get_chat_model_secrets, get_chat_model_config
+from ras.work_queue_manager import enqueue_chat_model_response
 
 class GPTRequest:
     """Represents a request to the GPT model."""
@@ -18,35 +28,20 @@ class GPTRequest:
 class GPTThreadHandler:
     """Handles GPT requests on a separate thread."""
     
-    def __init__(self, agent_config_data: Dict[str, Any]):
-        # Load config
-        chat_model_config = agent_config_data["chat_model"]
-        chat_model_config_file = chat_model_config["chat_model_config_file"]
-        chat_model_secrets_file = chat_model_config["chat_model_secrets_file"]
-        chat_system_instructions_file = chat_model_config["chat_system_instructions_file"]
-        
+    def __init__(self, agent_name):
         # Load config from chat_model_config_file
-        with open(chat_model_config_file, "r") as f:
-            config = json.load(f)
-            self.model = config["model"]
-            self.temperature = config.get("temperature", 0.7)
-            self.max_tokens = config.get("max_tokens", 1000)
+        self.agent_name = agent_name
+        chat_model_config = get_chat_model_config(agent_name)
 
-        # Load config from chat_model_config_file
-        with open(chat_model_secrets_file, "r") as f:
-            config = json.load(f)
-            self.api_key = config["api_key"]
-        
-        # Load base system instructions
-        with open(chat_system_instructions_file, "r") as f:
-            base_instructions = f.read()
+        self.model = chat_model_config["model"]
+        self.temperature = chat_model_config.get("temperature", 0.7)
+        self.max_tokens = chat_model_config.get("max_tokens", 1000)
 
-        # Load available MCP commands
-        tools_and_data = agent_config_data["tools_and_data"]
-        command_data_path = tools_and_data.get("mcp_commands_config_file")
+        chat_model_secrets = get_chat_model_secrets(agent_name)
+        self.api_key = chat_model_secrets["api_key"]
 
-        with open(command_data_path, "r") as f:
-            command_data = json.load(f)
+        base_instructions = get_chat_model_system_instructions(agent_name)
+        command_data = get_tools_and_data_mcp_commands_config(agent_name)
 
         # Format MCP commands for GPT, including optional response format
         command_descriptions = "\n".join(
@@ -75,8 +70,7 @@ class GPTThreadHandler:
 
         self.worker_thread = threading.Thread(target=self._start_async_worker, daemon=True)
         self.worker_thread.start()
-    
-    
+
     async def _process_queue(self):
         """Process requests from the queue in a separate thread."""
         while True:
@@ -114,6 +108,9 @@ class GPTThreadHandler:
                 else:
                     # If it's a regular function, just call it
                     request.callback(response)
+
+            else:
+                enqueue_chat_model_response(self.agent_name, response)
                 
         except Exception as e:
             print(f"Error processing GPT request: {e}")
@@ -213,7 +210,7 @@ class GPTThreadHandler:
         request = GPTRequest(prompt, callback)
         self.request_queue.put(request)
     
-    def ask_gpt_sync(self, prompt: str) -> str:
+    def ask_gpt_sync(self, prompt: str):
         """
         Send a request to the GPT model and wait for the response.
         This method blocks until the response is received.
@@ -232,7 +229,7 @@ class GPTThreadHandler:
         self.ask_gpt(prompt, callback)
         
         # Wait for the response
-        return response_queue.get()
+        enqueue_chat_model_response(self.agent_name, response_queue.get())
     
     def shutdown(self):
         """Shutdown the thread handler."""
@@ -248,9 +245,9 @@ class GPTThreadHandler:
 # Singleton instance
 _gpt_handler = None
 
-def get_gpt_handler(agent_config_data: Dict[str, Any]) -> GPTThreadHandler:
+def get_gpt_handler(agent_name) -> GPTThreadHandler:
     """Get the singleton instance of the GPTThreadHandler."""
     global _gpt_handler
     if _gpt_handler is None:
-        _gpt_handler = GPTThreadHandler(agent_config_data)
+        _gpt_handler = GPTThreadHandler(agent_name)
     return _gpt_handler

@@ -9,16 +9,23 @@ threaded execution of dynamically loaded Python modules on FIFO dequeued tasks.
 Author: David McKee
 """
 
+import sys
 import threading
 import queue
 import json
 import importlib
 
 from typing import Callable, Dict, Any
+from pathlib import Path
 
+SRC_DIR = Path(__file__).resolve().parent.parent.parent # Go up three levels: discord -> input_triggers -> src
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from ras.agent_config_buffer import get_chat_model_config
 
 # Global thread-safe work queues
-chat_model_queue: queue.Queue[str] = queue.Queue()
+chat_model_response_queue: queue.Queue[str] = queue.Queue()
 input_trigger_queue: queue.Queue[str] = queue.Queue()
 output_action_queue: queue.Queue[str] = queue.Queue()
 tools_and_data_queue: queue.Queue[str] = queue.Queue()
@@ -29,28 +36,33 @@ QUEUE_NAME_OUTPUT_ACTION = "OutputAction"
 QUEUE_NAME_TOOLS_AND_DATA = "ToolsAndData"
 
 
-def enqueue_chat_model(agent_name: str, contents: Dict[str, Any]) -> None:
+def enqueue_chat_model_response(agent_name: str, response: str) -> None:
     """
     Enqueue work for the chat model queue.
 
     :param agent_name: Name of the agent submitting the task
     :param contents: A JSON string describing the task
     """
-    contents["agent_name"] = agent_name
-
-    json_string = json.dumps(contents)
     
-    chat_model_queue.put(json_string)
+    message = {}
+    message["agent_name"] = agent_name
+    message["response"] = response
+    
+    contents = json.dumps(message)
+
+    chat_model_response_queue.put(contents)
 
 
-def enqueue_input_trigger(agent_name: str, contents: str) -> None:
+def enqueue_input_trigger(agent_name: str, contents: Dict) -> None:
     """
     Enqueue work for the input trigger queue.
 
     :param agent_name: Name of the agent submitting the task
     :param contents: A JSON string describing the task
     """
-    input_trigger_queue.put(contents)
+    json_string = json.dumps(contents) 
+
+    input_trigger_queue.put(json_string)
 
 
 def enqueue_output_action(agent_name: str, contents: str) -> None:
@@ -73,15 +85,23 @@ def enqueue_tools_and_data(agent_name: str, contents: str) -> None:
     tools_and_data_queue.put(contents)
 
 def process_input_trigger(task_data: dict):
-    # TODO: CHECK FOR INPUT AUGMENTATION
+    agent_name = task_data["agent_name"]
 
+    # TODO: CHECK FOR INPUT AUGMENTATION
+    # IF INPUT AUGMENTATION, TRIGGER INPUT AUGMENTATION
+    # ELSE
+    # MAKE CHAT MODEL REQUEST
+    
+    chat_model_config = get_chat_model_config(agent_name)
+    python_code_module = chat_model_config["python_code_module"]
+    
     # Load chat model on new thread and execute.
-    module = importlib.import_module(module_path)
+    module = importlib.import_module(python_code_module)
     func: Callable = getattr(module, function_name)
-    thread = threading.Thread(target=func, args=(task_data,), daemon=True)
+    thread = threading.Thread(target=func, args=(agent_name,), daemon=True)
     thread.start()
 
-def process_chat_model(task_data: dict):
+def process_chat_model_response(task_data: dict):
     pass 
 
 def process_output_action(task_data: dict):
