@@ -106,10 +106,14 @@ def ask_chat_model(agent_name: str, prompt: str, meta_data: Dict[str, Any]):
         for cmd in command_data.get("mcp_commands", [])
     )
 
-    system_content = (
-        f"{base_instructions.strip()}\n\n"
-        f"Available MCP commands:\n{command_descriptions}"
-    )
+    if command_data.get("mcp_commands", []):
+        first_command = command_data.get("mcp_commands", [])[0]["system_text"]
+        system_content = (
+            f"{base_instructions.strip()}\n\n"
+            f"Available MCP commands:\n{command_descriptions}"
+        )
+
+        system_content = system_content + f"\n\nIf additional information is required, respond with a single line for each MCP Command to execute.\n\nExample:\n{first_command}"
 
     request_params = {
         "model": model,
