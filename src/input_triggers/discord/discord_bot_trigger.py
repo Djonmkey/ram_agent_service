@@ -131,7 +131,8 @@ class DiscordBotTrigger(InputTrigger):
                 return
 
             # Immediately respond to prevent timeout
-            ack_message = await message.channel.send("Working on it...")
+            immediate_response = self.trigger_config.get("immediate_response", "Working...")
+            ack_message = await message.channel.send(immediate_response)
 
             meta_data = {
                 "timestamp": message.created_at.isoformat(),

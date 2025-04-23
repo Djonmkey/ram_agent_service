@@ -51,7 +51,7 @@ def log_raw_chat(request_params: Dict[str, Any], response) -> None:
             "id": response.id,
             "model": response.model,
             "object": response.object,
-            "created": int(response.created.timestamp()),
+            "created": now.isoformat(),
             "choices": [{
                 "index": i,
                 "message": {

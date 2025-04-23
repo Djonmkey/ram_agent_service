@@ -81,6 +81,13 @@ def process_output_action(agent_name: str, chat_model_response: str, meta_data: 
         if channel is None:
             print(f"Error: Channel with ID {channel_id} not found.")
         else:
+            ack_message_id = meta_data.get("ack_message_id")
+            
+            if ack_message_id:
+                ack_message = await channel.fetch_message(ack_message_id)
+                if ack_message:
+                    await ack_message.delete()
+
             await send_message(channel, chat_model_response)
         await bot.close()  # Disconnect after sending message
 
