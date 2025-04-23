@@ -22,7 +22,7 @@ SRC_DIR = Path(__file__).resolve().parent.parent.parent # Go up three levels: di
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from ras.agent_config_buffer import get_chat_model_config
+from ras.agent_config_buffer import get_chat_model_config, get_output_actions_config
 from tools_and_data.mcp_command_helper import contains_mcp_command, process_mcp_commands, escape_system_text_with_command_escape_text
 
 # Global thread-safe work queues
@@ -85,13 +85,20 @@ def enqueue_input_trigger(agent_name: str, contents: Dict) -> None:
     input_trigger_queue.put(json_string)
 
 
-def enqueue_output_action(agent_name: str, contents: str) -> None:
+def enqueue_output_action(agent_name: str, chat_model_response: str) -> None:
     """
     Enqueue work for the output action queue.
 
     :param agent_name: Name of the agent submitting the task
     :param contents: A JSON string describing the task
     """
+
+    message = {}
+    message["agent_name"] = agent_name
+    message["response"] = chat_model_response
+    
+    contents = json.dumps(message)
+
     output_action_queue.put(contents)
 
 
@@ -109,7 +116,6 @@ def process_chat_model_request(task_data: dict):
     prompt = task_data["prompt"]
     chat_model_config = get_chat_model_config(agent_name)
     python_code_module = chat_model_config["python_code_module"]
-    function_name = chat_model_config.get("handler_function", "ask_chat_model")
 
     # Convert file path to module path
     # Example: "src/chat_models/chat_model_openai.py" -> "chat_models.chat_model_openai"
@@ -144,7 +150,7 @@ def process_chat_model_response(task_data: dict):
     agent_name = task_data["agent_name"]
     response = task_data["response"]
 
-    if contains_mcp_command(agent_name, task_data["response"]):
+    if contains_mcp_command(agent_name, response):
         immediate_response = escape_system_text_with_command_escape_text(response)
 
         # Chat back that we are still processing
@@ -161,7 +167,35 @@ def process_chat_model_response(task_data: dict):
         enqueue_output_action(agent_name, response) # TODO: REview
 
 def process_output_action(task_data: dict):
-    pass 
+    agent_name = task_data["agent_name"]
+    chat_model_response = task_data["response"]
+    chat_model_config = get_output_actions_config(agent_name)
+
+    if chat_model_config:
+        for output_action in chat_model_config:
+            python_code_module = output_action["python_code_module"]
+
+            # Convert file path to module path
+            # Example: "src/chat_models/chat_model_openai.py" -> "chat_models.chat_model_openai"
+            if python_code_module.endswith(".py"):
+                python_code_module = python_code_module[:-3]  # Remove .py extension
+            module_path = python_code_module.replace("/", ".")
+            
+            # If it starts with src/, remove that prefix for proper importing
+            if module_path.startswith("src."):
+                module_path = module_path[4:]
+
+            # Import the module dynamically
+            module = importlib.import_module(module_path)
+
+            # Start the thread
+            thread = threading.Thread(
+                target=module.process_output_action,
+                args=(agent_name, chat_model_response),
+                daemon=True
+            )
+
+            thread.start() 
 
 def process_tools_and_data(task_data: dict):
     pass 

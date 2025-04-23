@@ -23,6 +23,7 @@ global_tools_and_data_mcp_commands_secrets = {}
 global_chat_model_system_instructions = {}
 global_chat_model_config = {}
 global_chat_model_secrets = {}
+global_output_actions_config = {}
 
 
 # Agent Manifest
@@ -208,6 +209,21 @@ def get_chat_model_secrets(agent_name: str) -> Dict[str, Any]:
     json_string = global_chat_model_secrets[agent_name]
     return json.loads(json_string)
 
+def set_output_actions_config(agent_name: str, output_actions_config: Dict[str, Any]) -> None:
+    """
+    Store chat model secrets as JSON string
+    
+    Args:
+        agent_name: Name of the agent
+        chat_model_secrets: Dictionary containing chat model secrets
+    """
+    json_string = json.dumps(output_actions_config)
+    global_output_actions_config[agent_name] = json_string
+
+def get_output_actions_config(agent_name: str) -> Dict[str, Any]:
+    json_string = global_output_actions_config[agent_name]
+    return json.loads(json_string)
+
 
 def load_json_file(file_path: str) -> Dict[str, Any]:
     """
@@ -355,6 +371,11 @@ def load_agent_manifest(manifest_path: str) -> None:
                     chat_secrets = load_json_file(str(secrets_path))
                     set_chat_model_secrets(agent_name, chat_secrets)
                     logger.info(f"Loaded chat model secrets for {agent_name}")
+
+            # Optional: output actions
+            output_actions = agent_config.get("output_actions", [])
+            if output_actions:
+                set_output_actions_config(agent_name, output_actions)
         
         logger.info(f"Finished loading configuration for {enabled_count} enabled agent(s)")
     

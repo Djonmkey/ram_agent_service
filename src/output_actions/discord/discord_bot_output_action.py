@@ -78,3 +78,7 @@ class DiscordBotOutputAction:
         except discord.HTTPException as e:
             print(f"Error: Failed to delete message {message.id}: {e}")
 
+
+    def process_output_action(self, agent_name: str, chat_model_response: str) -> None:
+        pass
+
