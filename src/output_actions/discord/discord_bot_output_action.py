@@ -1,17 +1,16 @@
 import discord
 import asyncio
 from discord.ext import commands
+from typing import Optional
 
-DEFAULT_OUTPUT_NAME = "DiscordOutput"
+# Ensure src is in path for sibling imports
+import sys
+from pathlib import Path
+SRC_DIR = Path(__file__).resolve().parent.parent.parent # Go up three levels: discord -> input_triggers -> src
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
-def get_name() -> str:
-    """
-    Returns the name identifier for the Discord output handler.
-
-    :return: The output handler name.
-    """
-    return DEFAULT_OUTPUT_NAME
-
+from ras.agent_config_buffer import get_output_action_secrets
 
 async def send_message(
     channel: discord.abc.Messageable,
@@ -48,29 +47,47 @@ async def send_message(
         print(f"Unexpected error during message sending: {e}")
 
 
-async def delete_message(message: discord.Message) -> None:
+def process_output_action(agent_name: str, chat_model_response: str, meta_data: dict) -> None:
     """
-    Deletes a Discord message.
+    Processes the output from a chat model and sends it to a Discord channel using metadata.
 
-    :param message: The Discord message to delete.
-    """
-    if not message:
-        return
-    try:
-        await message.delete()
-    except discord.Forbidden:
-        print(f"Error: Bot lacks permissions to delete message {message.id} in channel {message.channel.id}")
-    except discord.NotFound:
-        print(f"Warning: Message {message.id} not found (might have been already deleted).")
-    except discord.HTTPException as e:
-        print(f"Error: Failed to delete message {message.id}: {e}")
-
-
-def process_output_action(agent_name: str, chat_model_response: str) -> None:
-    """
-    Placeholder for processing output from a chat model.
+    This function initializes a Discord bot from `meta_data`, retrieves the channel, and sends the message.
 
     :param agent_name: The agent's name generating the output.
     :param chat_model_response: The response from the chat model.
+    :param meta_data: Metadata dictionary that must include:
+                      - "channel_id": Discord channel to send the message to.
+                      - "bot_token": Token to initialize a new bot instance.
     """
-    pass
+    channel_id: Optional[int] = meta_data.get("channel_id")
+
+    output_action_secrets = get_output_action_secrets(agent_name)
+
+    token = output_action_secrets["secrets"].get("discord_bot_token")
+
+    if channel_id is None or token is None:
+        print("Error: 'channel_id' or 'bot_token' missing from meta_data.")
+        return
+
+    intents = discord.Intents.default()
+    intents.guilds = True
+    intents.messages = True
+
+    bot = commands.Bot(command_prefix="!", intents=intents)
+
+    @bot.event
+    async def on_ready():
+        channel = bot.get_channel(channel_id)
+        if channel is None:
+            print(f"Error: Channel with ID {channel_id} not found.")
+        else:
+            await send_message(channel, chat_model_response)
+        await bot.close()  # Disconnect after sending message
+
+    # Run bot in a new event loop
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(bot.start(token))
+    finally:
+        loop.close()

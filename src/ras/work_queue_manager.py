@@ -22,7 +22,7 @@ SRC_DIR = Path(__file__).resolve().parent.parent.parent # Go up three levels: di
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from ras.agent_config_buffer import get_chat_model_config, get_output_actions_config
+from ras.agent_config_buffer import get_chat_model_config, get_output_action_config
 from tools_and_data.mcp_command_helper import contains_mcp_command, process_mcp_commands, escape_system_text_with_command_escape_text
 
 # Global thread-safe work queues
@@ -54,7 +54,7 @@ def enqueue_chat_model_request(agent_name: str, prompt: str) -> None:
 
     chat_model_request_queue.put(contents)
 
-def enqueue_chat_model_response(agent_name: str, response: str) -> None:
+def enqueue_chat_model_response(agent_name: str, response: str, meta_data: dict) -> None:
     """
     Enqueue work for the chat model queue.
 
@@ -62,30 +62,34 @@ def enqueue_chat_model_response(agent_name: str, response: str) -> None:
     :param contents: A JSON string describing the task
     """
     
-    message = {}
-    message["agent_name"] = agent_name
-    message["response"] = response
+    contents = {}
+    contents["agent_name"] = agent_name
+    contents["response"] = response
+    contents["meta_data"] = meta_data
     
-    contents = json.dumps(message)
+    json_string = json.dumps(contents)
 
-    chat_model_response_queue.put(contents)
+    chat_model_response_queue.put(json_string)
 
 
-def enqueue_input_trigger(agent_name: str, contents: Dict) -> None:
+def enqueue_input_trigger(agent_name: str, prompt: str, meta_data: Dict) -> None:
     """
     Enqueue work for the input trigger queue.
 
     :param agent_name: Name of the agent submitting the task
     :param contents: A JSON string describing the task
     """
+    contents = {}
     contents["agent_name"] = agent_name
-
+    contents["prompt"] = prompt
+    contents["meta_data"] = meta_data
+  
     json_string = json.dumps(contents) 
 
     input_trigger_queue.put(json_string)
 
 
-def enqueue_output_action(agent_name: str, chat_model_response: str) -> None:
+def enqueue_output_action(agent_name: str, chat_model_response: str, meta_data: Dict) -> None:
     """
     Enqueue work for the output action queue.
 
@@ -96,6 +100,7 @@ def enqueue_output_action(agent_name: str, chat_model_response: str) -> None:
     message = {}
     message["agent_name"] = agent_name
     message["response"] = chat_model_response
+    message["meta_data"] = meta_data
     
     contents = json.dumps(message)
 
@@ -114,6 +119,7 @@ def enqueue_tools_and_data(agent_name: str, contents: str) -> None:
 def process_chat_model_request(task_data: dict):
     agent_name = task_data["agent_name"]
     prompt = task_data["prompt"]
+    meta_data = task_data.get("meta_data", {})
     chat_model_config = get_chat_model_config(agent_name)
     python_code_module = chat_model_config["python_code_module"]
 
@@ -133,7 +139,7 @@ def process_chat_model_request(task_data: dict):
     # Start the thread
     thread = threading.Thread(
         target=module.ask_chat_model,
-        args=(agent_name, prompt),
+        args=(agent_name, prompt, meta_data),
         daemon=True
     )
 
@@ -149,6 +155,7 @@ def process_input_trigger(task_data: dict):
 def process_chat_model_response(task_data: dict):
     agent_name = task_data["agent_name"]
     response = task_data["response"]
+    meta_data = task_data.get("meta_data", {})
 
     if contains_mcp_command(agent_name, response):
         immediate_response = escape_system_text_with_command_escape_text(response)
@@ -164,38 +171,39 @@ def process_chat_model_response(task_data: dict):
         process_chat_model_request(task_data)
     else:
         # Load Output
-        enqueue_output_action(agent_name, response) # TODO: REview
+        enqueue_output_action(agent_name, response, meta_data)
 
 def process_output_action(task_data: dict):
     agent_name = task_data["agent_name"]
     chat_model_response = task_data["response"]
-    chat_model_config = get_output_actions_config(agent_name)
+    meta_data = task_data.get("meta_data", {})
 
-    if chat_model_config:
-        for output_action in chat_model_config:
-            python_code_module = output_action["python_code_module"]
+    output_action_config = get_output_action_config(agent_name)
 
-            # Convert file path to module path
-            # Example: "src/chat_models/chat_model_openai.py" -> "chat_models.chat_model_openai"
-            if python_code_module.endswith(".py"):
-                python_code_module = python_code_module[:-3]  # Remove .py extension
-            module_path = python_code_module.replace("/", ".")
-            
-            # If it starts with src/, remove that prefix for proper importing
-            if module_path.startswith("src."):
-                module_path = module_path[4:]
+    if output_action_config:
+        python_code_module = output_action_config["python_code_module"]
 
-            # Import the module dynamically
-            module = importlib.import_module(module_path)
+        # Convert file path to module path
+        # Example: "src/chat_models/chat_model_openai.py" -> "chat_models.chat_model_openai"
+        if python_code_module.endswith(".py"):
+            python_code_module = python_code_module[:-3]  # Remove .py extension
+        module_path = python_code_module.replace("/", ".")
+        
+        # If it starts with src/, remove that prefix for proper importing
+        if module_path.startswith("src."):
+            module_path = module_path[4:]
 
-            # Start the thread
-            thread = threading.Thread(
-                target=module.process_output_action,
-                args=(agent_name, chat_model_response),
-                daemon=True
-            )
+        # Import the module dynamically
+        module = importlib.import_module(module_path)
 
-            thread.start() 
+        # Start the thread
+        thread = threading.Thread(
+            target=module.process_output_action,
+            args=(agent_name, chat_model_response, meta_data),
+            daemon=True
+        )
+
+        thread.start() 
 
 def process_tools_and_data(task_data: dict):
     pass 

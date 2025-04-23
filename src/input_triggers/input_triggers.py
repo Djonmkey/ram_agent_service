@@ -250,22 +250,18 @@ class InputTrigger(ABC):
 
         # Make the asynchronous call to the GPT handler
         try:
-            input_trigger_content = {
-                "content": prompt_to_send,
-                "timestamp": None,
-                "meta_data": {
-                    "message_id": None,
-                    "ack_message_id": None,
-                    "channel_id": None,
-                    "guild_id": None,
-                    "author_id": None,
-                    "author_name": None
-                }
+            meta_data = {
+                "message_id": None,
+                "ack_message_id": None,
+                "channel_id": None,
+                "guild_id": None,
+                "author_id": None,
+                "author_name": None
             }
 
             agent_name = self.agent_config_data["name"]
         
-            enqueue_input_trigger(agent_name, input_trigger_content)
+            enqueue_input_trigger(agent_name, prompt_to_send, meta_data)
 
         except Exception as e:
              self.logger.error(f"Failed to queue request to GPT handler: {e}", exc_info=True)

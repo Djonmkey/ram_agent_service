@@ -221,7 +221,7 @@ async def _load_and_initialize_single_trigger(
          logger.error(f"    ❌ ERROR: Could not resolve paths for {trigger_index_str} ('{module_path_str_original}') for agent '{agent_name}': {e}", exc_info=True)
          return False
 
-    logger.info(f"    {trigger_index_str}: Module '{module_path_str_original}' (Import Path: '{module_path_for_import}')")
+    logger.info(f"      Input Trigger Module '{module_path_str_original}' (Import Path: '{module_path_for_import}')")
     logger.info(f"      Config Path (Resolved): {trigger_config_absolute_path}")
     logger.info(f"      Secrets Path (Resolved): {trigger_secrets_absolute_path}")
 
@@ -323,30 +323,17 @@ async def load_input_triggers():
         agent_config_data =  get_agent_config(agent_name)
 
         # Load input triggers specified in this agent's config
-        input_triggers_list = agent_config_data.get("input_triggers", [])
-        if not isinstance(input_triggers_list, list):
-            logger.warning(f"  'input_triggers' in config for agent '{agent_name}' is not a list. Skipping triggers for this agent.")
-            continue
-
-        if not input_triggers_list:
-            logger.info(f"  No 'input_triggers' found or list is empty in the config for agent '{agent_name}'.")
-            continue
-
-        logger.info(f"  Found {len(input_triggers_list)} input trigger(s) specified for '{agent_name}'.")
-
-        # --- Loop through triggers and call the helper function ---
-        for i, trigger_info in enumerate(input_triggers_list):
-            trigger_index_str = f"Trigger #{i+1}" # For logging context
-            # Call the new helper function to handle loading/initialization
-            success = await _load_and_initialize_single_trigger(
-                trigger_info=trigger_info,
-                agent_name=agent_name,
-                agent_config_data=agent_config_data, # Pass the loaded agent config
-                trigger_index_str=trigger_index_str
-            )
-            if success:
-                loaded_listener_count += 1
-            # Errors are logged within the helper function
+        input_trigger = agent_config_data.get("input_trigger", [])
+        
+        success = await _load_and_initialize_single_trigger(
+            trigger_info=input_trigger,
+            agent_name=agent_name,
+            agent_config_data=agent_config_data, # Pass the loaded agent config
+            trigger_index_str=""
+        )
+        if success:
+            loaded_listener_count += 1
+        # Errors are logged within the helper function
 
     logger.info(f"\nFinished processing {processed_agents} agent(s).")
     if loaded_listener_count > 0:

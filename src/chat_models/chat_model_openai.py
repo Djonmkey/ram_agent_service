@@ -81,7 +81,7 @@ def log_raw_chat(request_params: Dict[str, Any], response) -> None:
         print(f"Error logging raw chat: {e}")
 
 
-def ask_chat_model(agent_name: str, prompt: str):
+def ask_chat_model(agent_name: str, prompt: str, meta_data: Dict[str, Any]):
     """
     Submit a prompt to the OpenAI chat model configured for the specified agent.
 
@@ -133,7 +133,7 @@ def ask_chat_model(agent_name: str, prompt: str):
         # Extract the response text from the first choice
         response_text = response.choices[0].message.content.strip()
 
-        enqueue_chat_model_response(agent_name, response_text)
+        enqueue_chat_model_response(agent_name, response_text, meta_data)
 
     except Exception as e:
         print(f"Error calling chat model: {e}")
