@@ -34,6 +34,8 @@ except ImportError:
     print("Warning: Could not import InputTrigger base class for type checking in determine_caller_name.")
 
 
+from ras.work_queue_manager import enqueue_input_trigger
+
 # --- Globals ---
 log_directory = None # Set by initialize_input_triggers
 current_conversations = {} # Used by ConversationLogger
@@ -178,7 +180,7 @@ def patch_gpt_handler(handler: 'GPTThreadHandler'):
 
     try:
         # Store references to the original methods of *this specific instance*
-        original_ask_gpt = handler.ask_gpt
+        original_ask_gpt = enqueue_input_trigger(None, None)
         original_ask_gpt_sync = handler.ask_gpt_sync
     except AttributeError as e:
         print(f"Failed to get methods for patching on handler instance: {e}")
@@ -259,7 +261,7 @@ def patch_gpt_handler(handler: 'GPTThreadHandler'):
 
     try:
         # Apply the patches TO THE SPECIFIC HANDLER INSTANCE
-        handler.ask_gpt = patched_ask_gpt
+        handler.ask_chat_model = patched_ask_gpt
         handler.ask_gpt_sync = patched_ask_gpt_sync
         # print(f"GPT handler instance patched for logging.") # Less verbose logging
     except Exception as e:

@@ -199,7 +199,7 @@ class GPTThreadHandler:
         except Exception as e:
             print(f"Error logging raw chat: {e}")
     
-    def ask_gpt(self, prompt: str, callback: Optional[Callable[[str], None]] = None):
+    def ask_chat_model(self, prompt: str, callback: Optional[Callable[[str], None]] = None):
         """
         Queue a request to the GPT model.
         
@@ -226,7 +226,7 @@ class GPTThreadHandler:
         def callback(response: str):
             response_queue.put(response)
         
-        self.ask_gpt(prompt, callback)
+        self.ask_chat_model(prompt, callback)
         
         # Wait for the response
         enqueue_chat_model_response(self.agent_name, response_queue.get())

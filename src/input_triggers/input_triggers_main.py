@@ -11,6 +11,7 @@ import pathlib
 
 import ras.work_queue_manager 
 from ras.agent_config_buffer import get_agent_name_list, get_agent_config
+from ras.work_queue_manager import enqueue_chat_model_request
 
 # --- Removed PROJECT_ROOT and SRC_DIR definition ---
 # It's assumed that the main application entry point (e.g., main.py)
@@ -111,9 +112,9 @@ def ask_gpt_async(prompt: str, agent_config_data: Dict[str, Any], callback=None)
         agent_config_data: Configuration data for the specific agent.
         callback: Optional callback function to call with the response.
     """
-    gpt_handler = get_gpt_handler(agent_config_data)
-    gpt_handler.ask_gpt(prompt, callback)
+    agent_name = agent_config_data["name"]
 
+    enqueue_chat_model_request(agent_name, prompt)
 
 def _load_json_file(file_path_str: str, description: str) -> Optional[Dict[str, Any]]:
     """Loads a JSON file with error handling and logging.

@@ -23,7 +23,7 @@ DEFAULT_MCP_SECRETS_PATH = SRC_DIR / "tools_and_data" / "secrets.json"
 DEFAULT_MCP_MODULES_DIR = ""
 
 from src.chat_models.chat_model_openai import get_gpt_handler
-
+from ras.work_queue_manager import enqueue_input_trigger
 
 class InputTrigger(ABC):
     """
@@ -315,7 +315,6 @@ class InputTrigger(ABC):
             callback("Error: AI agent is not configured.")
             return
 
-        gpt_handler = get_gpt_handler(self.agent_config_data)
         prompt_to_send = current_prompt if current_prompt is not None else initial_query
 
         if recursion_depth >= MAX_RECURSION_DEPTH:
@@ -353,7 +352,23 @@ class InputTrigger(ABC):
 
         # Make the asynchronous call to the GPT handler
         try:
-            gpt_handler.ask_gpt(prompt_to_send, gpt_handler_callback)
+            input_trigger_content = {
+                "content": prompt_to_send,
+                "timestamp": None,
+                "meta_data": {
+                    "message_id": None,
+                    "ack_message_id": None,
+                    "channel_id": None,
+                    "guild_id": None,
+                    "author_id": None,
+                    "author_name": None
+                }
+            }
+
+            agent_name = self.agent_config_data["name"]
+        
+            enqueue_input_trigger(agent_name, input_trigger_content)
+
         except Exception as e:
              self.logger.error(f"Failed to queue request to GPT handler: {e}", exc_info=True)
              callback(f"Error: Failed to communicate with AI agent: {e}")

@@ -25,16 +25,33 @@ if str(SRC_DIR) not in sys.path:
 from ras.agent_config_buffer import get_chat_model_config
 
 # Global thread-safe work queues
+chat_model_request_queue: queue.Queue[str] = queue.Queue()
 chat_model_response_queue: queue.Queue[str] = queue.Queue()
 input_trigger_queue: queue.Queue[str] = queue.Queue()
 output_action_queue: queue.Queue[str] = queue.Queue()
 tools_and_data_queue: queue.Queue[str] = queue.Queue()
 
-QUEUE_NAME_CHAT_MODEL = "ChatModel"
+QUEUE_NAME_CHAT_MODEL_REQUEST = "ChatModelRequest"
+QUEUE_NAME_CHAT_MODEL_RESPONSE = "ChatModelResponse"
 QUEUE_NAME_INPUT_TRIGGER = "InputTrigger"
 QUEUE_NAME_OUTPUT_ACTION = "OutputAction"
 QUEUE_NAME_TOOLS_AND_DATA = "ToolsAndData"
 
+def enqueue_chat_model_request(agent_name: str, prompt: str) -> None:
+    """
+    Enqueue work for the chat model queue.
+
+    :param agent_name: Name of the agent submitting the task
+    :param contents: A JSON string describing the task
+    """
+    
+    message = {}
+    message["agent_name"] = agent_name
+    message["prompt"] = prompt
+    
+    contents = json.dumps(message)
+
+    chat_model_request_queue.put(contents)
 
 def enqueue_chat_model_response(agent_name: str, response: str) -> None:
     """
@@ -84,22 +101,24 @@ def enqueue_tools_and_data(agent_name: str, contents: str) -> None:
     """
     tools_and_data_queue.put(contents)
 
-def process_input_trigger(task_data: dict):
+def process_chat_model_request(task_data: dict):
     agent_name = task_data["agent_name"]
-
-    # TODO: CHECK FOR INPUT AUGMENTATION
-    # IF INPUT AUGMENTATION, TRIGGER INPUT AUGMENTATION
-    # ELSE
-    # MAKE CHAT MODEL REQUEST
-    
     chat_model_config = get_chat_model_config(agent_name)
     python_code_module = chat_model_config["python_code_module"]
-    
+    function_name = chat_model_config.get("handler_function", "ask_chat_model")
+
     # Load chat model on new thread and execute.
     module = importlib.import_module(python_code_module)
     func: Callable = getattr(module, function_name)
     thread = threading.Thread(target=func, args=(agent_name,), daemon=True)
     thread.start()
+
+def process_input_trigger(task_data: dict):
+    # TODO: CHECK FOR INPUT AUGMENTATION
+    # IF INPUT AUGMENTATION, TRIGGER INPUT AUGMENTATION
+    # ELSE
+    # MAKE CHAT MODEL REQUEST
+    process_chat_model_request(task_data)
 
 def process_chat_model_response(task_data: dict):
     pass 
@@ -120,10 +139,11 @@ def _load_and_execute_module(queue_name: str, task_data: dict) -> None:
     :param task_data: Dictionary of task input parameters
     """
     try:
-        
+        if queue_name == QUEUE_NAME_CHAT_MODEL_REQUEST:
+           process_chat_model_request(task_data)
 
-        if queue_name == QUEUE_NAME_CHAT_MODEL:
-           process_chat_model(task_data)
+        if queue_name == QUEUE_NAME_CHAT_MODEL_RESPONSE:
+           process_chat_model_response(task_data)
 
         if queue_name == QUEUE_NAME_INPUT_TRIGGER:
            process_input_trigger(task_data)
@@ -162,7 +182,8 @@ def start_all_queue_workers() -> None:
     """
     Start background worker threads for each queue.
     """
-    _start_queue_worker(QUEUE_NAME_CHAT_MODEL, chat_model_queue)
+    _start_queue_worker(QUEUE_NAME_CHAT_MODEL_REQUEST, chat_model_request_queue)
+    _start_queue_worker(QUEUE_NAME_CHAT_MODEL_RESPONSE, chat_model_response_queue)
     _start_queue_worker(QUEUE_NAME_INPUT_TRIGGER, input_trigger_queue)
-    _start_queue_worker("OutputAction", output_action_queue)
-    _start_queue_worker("ToolsAndData", tools_and_data_queue)
+    _start_queue_worker(QUEUE_NAME_OUTPUT_ACTION, output_action_queue)
+    _start_queue_worker(QUEUE_NAME_TOOLS_AND_DATA, tools_and_data_queue)
