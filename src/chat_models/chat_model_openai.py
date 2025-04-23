@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Dict, Any
 from threading import Lock
 
-import openai
+from openai import OpenAI
 
 SRC_DIR = Path(__file__).resolve().parent.parent
 
@@ -46,19 +46,20 @@ def log_raw_chat(request_params: Dict[str, Any], response) -> None:
 
         log_file = os.path.join(log_path, f"{timestamp}_raw_chat.json")
 
+        # Convert response to dict - structure has changed in OpenAI v1.0.0+
         response_dict = {
             "id": response.id,
             "model": response.model,
             "object": response.object,
-            "created": response.created,
+            "created": int(response.created.timestamp()),
             "choices": [{
-                "index": choice.index,
+                "index": i,
                 "message": {
                     "role": choice.message.role,
                     "content": choice.message.content
                 },
                 "finish_reason": choice.finish_reason
-            } for choice in response.choices],
+            } for i, choice in enumerate(response.choices)],
             "usage": {
                 "prompt_tokens": response.usage.prompt_tokens,
                 "completion_tokens": response.usage.completion_tokens,
@@ -121,11 +122,15 @@ def ask_chat_model(agent_name: str, prompt: str):
     }
 
     try:
-        openai.api_key = api_key
-        response = openai.ChatCompletion.create(**request_params)
+        # Initialize the OpenAI client with the API key
+        client = OpenAI(api_key=api_key)
+        
+        # Use the client to create a chat completion
+        response = client.chat.completions.create(**request_params)
 
         log_raw_chat(request_params, response)
 
+        # Extract the response text from the first choice
         response_text = response.choices[0].message.content.strip()
 
         enqueue_chat_model_response(agent_name, response_text)
@@ -133,4 +138,3 @@ def ask_chat_model(agent_name: str, prompt: str):
     except Exception as e:
         print(f"Error calling chat model: {e}")
         return "An error occurred while processing the request."
-
