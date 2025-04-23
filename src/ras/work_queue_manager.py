@@ -23,6 +23,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from ras.agent_config_buffer import get_chat_model_config
+from tools_and_data.mcp_command_helper import contains_mcp_command, process_mcp_commands, escape_system_text_with_command_escape_text
 
 # Global thread-safe work queues
 chat_model_request_queue: queue.Queue[str] = queue.Queue()
@@ -140,7 +141,24 @@ def process_input_trigger(task_data: dict):
     process_chat_model_request(task_data)
 
 def process_chat_model_response(task_data: dict):
-    pass 
+    agent_name = task_data["agent_name"]
+    response = task_data["response"]
+
+    if contains_mcp_command(agent_name, task_data["response"]):
+        immediate_response = escape_system_text_with_command_escape_text(response)
+
+        # Chat back that we are still processing
+        enqueue_output_action(agent_name, immediate_response) # TODO: REview
+                
+        # Generate the new prompt with command results
+        next_prompt = process_mcp_commands(response, initial_query)
+
+        # Recursive call with the new prompt and incremented depth
+        # SET DEPTH ON Trigger and increment recursion_depth here e.g. recursion_depth + 1
+        process_chat_model_request(task_data)
+    else:
+        # Load Output
+        enqueue_output_action(agent_name, response) # TODO: REview
 
 def process_output_action(task_data: dict):
     pass 

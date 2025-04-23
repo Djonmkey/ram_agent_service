@@ -123,31 +123,6 @@ class InputTrigger(ABC):
             self.logger.error(f"Error reading file: {file_path}", exc_info=True)
             return None
 
-    def contains_command(self, message_text: str) -> bool:
-        """Checks if the message text contains any known MCP command or alias."""
-        command_data = self._load_json_safely(self.mcp_commands_path)
-        if not command_data:
-            return False
-
-        message_text_lower = message_text.lower().strip() # Case-insensitive check
-        try:
-            for cmd in command_data.get("mcp_commands", []):
-                if cmd.get("enabled") is False:
-                    continue
-
-                system_text = cmd.get("system_text")
-                if system_text and system_text.lower() in message_text_lower:
-                    self.logger.debug(f"Found command '{system_text}' in message.")
-                    return True
-                for alias in cmd.get("aliases", []):
-                    if alias.lower() in message_text_lower:
-                        self.logger.debug(f"Found command alias '{alias}' in message.")
-                        return True
-            return False
-        except Exception:
-            self.logger.error("Error during command checking", exc_info=True)
-            return False
-
     def _run_mcp_command(self, command_text: str) -> str:
         """Executes a specific MCP command identified by its system_text."""
         self.logger.info(f"Attempting to run MCP command: {command_text}")
@@ -220,79 +195,6 @@ class InputTrigger(ABC):
             self.logger.error(f"Error executing MCP command '{command_text}': {e}", exc_info=True)
             return f"Error executing command {command_text}: {e}"
 
-    def _process_mcp_commands(self, gpt_response: str, initial_query: str) -> str:
-        """
-        Finds MCP commands in the GPT response, executes them, and formats a new prompt.
-
-        Args:
-            gpt_response: The raw response from the GPT model.
-            initial_query: The original user query that started the interaction.
-
-        Returns:
-            A new prompt string containing the command results, instructing the AI
-            to use them to answer the initial query.
-        """
-        self.logger.debug("Processing potential MCP commands in GPT response.")
-        command_data = self._load_json_safely(self.mcp_commands_path)
-        if not command_data:
-            return "Error: Could not load MCP command configuration for processing."
-
-        # Get all defined command system_texts where the command is enabled
-        all_commands = [
-            cmd["system_text"]
-            for cmd in command_data.get("mcp_commands", [])
-            if cmd.get("enabled") and "system_text" in cmd
-        ]
-
-        # Sort by length descending to match longer commands first
-        all_commands.sort(key=len, reverse=True)
-
-        executed_results = []
-        found_commands = False
-
-        # Iterate through commands and execute if found in the response
-        temp_response = gpt_response # Work on a copy
-        for command in all_commands:
-            # Use case-insensitive check but execute with original case
-            if command.lower() in temp_response.lower():
-                found_commands = True
-                self.logger.info(f"Found command '{command}' in response, executing.")
-                command_result = self._run_mcp_command(command)
-                executed_results.append(f"--- Command: {command} ---\nResult:\n{command_result}\n--- End {command} ---")
-                # Optional: Remove the command from temp_response to avoid re-matching parts?
-                # This is complex if commands overlap. Simpler to just list results.
-
-        if not found_commands:
-             self.logger.debug("No MCP commands found in the response.")
-             # Should not happen if called after contains_command, but handle defensively
-             return gpt_response # Return original if no commands were actually found/executed
-
-        # Format the new prompt for the AI
-        results_text = "\n\n".join(executed_results)
-        new_prompt = (
-            f"In response to my original request \"{initial_query}\", you asked to run one or more tools/commands. "
-            f"I have executed them and here are the results:\n\n"
-            f"{results_text}\n\n"
-            f"Please use these results to provide the final answer to my original request: \"{initial_query}\""
-        )
-        self.logger.debug("Formatted new prompt with MCP command results.")
-        return new_prompt
-
-    def escape_system_text_with_command_escape_text(self, response: str) -> Optional[str]:
-        """
-        Strips any trailing slash-prefixed commands (e.g., /list_my_goals) from a response string.
-
-        If the entire string only contains commands or whitespace, returns an empty string.
-
-        :param response: The response text potentially containing trailing commands.
-        :return: The cleaned response string with commands removed, or an empty string if only commands were present.
-        """
-        # Strip leading/trailing whitespace for consistent behavior
-        response = response.strip()
-
-        # TODO: Replace system_text found with command_escape_text, which defaults to '(in progress…)'
-        
-        return response.strip()
     
     def _execute_ai_agent_async(self,
                                 initial_query: str,
@@ -324,7 +226,7 @@ class InputTrigger(ABC):
         async def gpt_handler_callback(response: str):
             self.logger.debug(f"AI Agent response received (Depth: {recursion_depth}). Starts with: {response[:100]}...")
             # Check if the response contains an MCP command
-            if self.contains_command(response):
+            if self.contains_mcp_command(response):
                 immediate_response = self.escape_system_text_with_command_escape_text(response)
 
                 # Chat back that we are still processing
