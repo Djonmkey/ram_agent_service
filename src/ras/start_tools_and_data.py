@@ -8,6 +8,8 @@ from pathlib import Path # Ensure Path is imported
 SRC_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = SRC_DIR.parent
 
+from ras.agent_config_buffer import get_agent_name_list, get_tools_and_data_mcp_commands_config, get_tools_and_data_mcp_commands_secrets
+
 def start_mcp_commands(command_data, secrets, agent_name: str):
     """Executes startup MCP commands for a given agent."""
     common_params = secrets.get("common", {})
@@ -96,7 +98,7 @@ def start_mcp_commands(command_data, secrets, agent_name: str):
         print(f"  ℹ️ No startup commands marked with 'run_on_start_up: true' found for agent '{agent_name}'.")
 
 
-def on_startup_dispatcher(agent_manifest_data: dict) -> None:
+def on_startup_dispatcher() -> None:
     """
     Dispatch startup routines for each enabled agent in the manifest by loading
     their configuration and initializing startup MCP commands.
@@ -105,92 +107,14 @@ def on_startup_dispatcher(agent_manifest_data: dict) -> None:
     """
     print("\n--- Running MCP Startup Dispatcher ---") # Header for clarity
 
-    if not agent_manifest_data or "agents" not in agent_manifest_data:
-        print("❌ ERROR: Agent manifest data is missing or invalid. Cannot run startup dispatcher.")
-        return
-
     enabled_agents_count = 0
-    for agent in agent_manifest_data["agents"]:
-        if agent.get("enabled") is False:
-            continue
-
-        # Ensure agent is a dictionary and get name safely
-        if not isinstance(agent, dict):
-            print(f"⚠️ Skipping invalid agent entry (not a dictionary): {agent}")
-            continue
-        agent_name = agent.get("name", "Unnamed Agent")
-
-        if not agent.get("enabled", False):
-            # print(f"ℹ️ Skipping disabled agent: {agent_name}") # Optional: Less verbose
-            continue
-
+    for agent_name in get_agent_name_list():
         enabled_agents_count += 1
         print(f"\n🚀 Initializing startup for enabled agent: '{agent_name}'")
 
-        # --- Agent Config File Handling ---
-        agent_config_relative_path = agent.get("agent_config_file")
-        if not agent_config_relative_path:
-            print(f"  ⚠️ Skipping agent '{agent_name}': Missing 'agent_config_file' in manifest.")
-            continue
-
-        # Construct absolute path relative to the project root
-        agent_config_absolute_path = (PROJECT_ROOT / agent_config_relative_path).resolve()
-
-        print(f"  Config Path (relative): {agent_config_relative_path}")
-        print(f"  Config Path (absolute): {agent_config_absolute_path}")
-
-        # Check if the config file exists and is a file BEFORE trying to open
-        if not agent_config_absolute_path.exists():
-            print(f"  ❌ ERROR: Agent config file not found: {agent_config_absolute_path}")
-            continue # Skip this agent
-        if not agent_config_absolute_path.is_file():
-            print(f"  ❌ ERROR: Agent config path is not a file: {agent_config_absolute_path}")
-            continue # Skip this agent
-        # --- End Agent Config File Handling ---
-
         try:
-            # Load the agent config file (now we know it exists)
-            with open(agent_config_absolute_path, "r", encoding="utf-8") as f:
-                agent_config = json.load(f)
-            print(f"  ✅ Agent config loaded successfully.")
-
-            tools_and_data = agent_config.get("tools_and_data", {})
-
-            # --- Command and Secrets File Handling ---
-            # Get paths from the loaded agent_config
-            command_data_relative_path = tools_and_data.get("mcp_commands_config_file")
-            secrets_data_relative_path = tools_and_data.get("mcp_commands_secrets_file")
-
-            if not command_data_relative_path:
-                print(f"  ⚠️ Skipping MCP startup for agent '{agent_name}': No 'mcp_commands_config_file' found in agent config ({agent_config_absolute_path.resolve()}).")
-                continue
-
-            # Resolve paths relative to project root
-            command_data_absolute_path = (PROJECT_ROOT / command_data_relative_path).resolve()
-            secrets_data_absolute_path = (PROJECT_ROOT / secrets_data_relative_path).resolve()
-
-            print(f"  MCP Commands Path: {command_data_absolute_path}")
-            print(f"  MCP Secrets Path: {secrets_data_absolute_path}")
-
-            # Check existence for commands config
-            if not command_data_absolute_path.exists() or not command_data_absolute_path.is_file():
-                 print(f"  ❌ ERROR: MCP commands config file not found or not a file: {command_data_absolute_path}")
-                 continue # Skip MCP startup for this agent
-
-            # Check existence for secrets config
-            if not secrets_data_absolute_path.exists() or not secrets_data_absolute_path.is_file():
-                 print(f"  ❌ ERROR: MCP secrets file not found or not a file: {secrets_data_absolute_path}")
-                 continue # Skip MCP startup for this agent
-
-            # Load the command config and secrets files
-            with open(command_data_absolute_path, "r", encoding="utf-8") as f_cmd:
-                command_data = json.load(f_cmd)
-            print(f"  ✅ MCP commands config loaded.")
-
-            with open(secrets_data_absolute_path, "r", encoding="utf-8") as f_sec:
-                secrets = json.load(f_sec)
-            print(f"  ✅ MCP secrets loaded.")
-            # --- End Command and Secrets File Handling ---
+            command_data = get_tools_and_data_mcp_commands_config(agent_name)
+            secrets = get_tools_and_data_mcp_commands_secrets(agent_name)
 
             # Call the startup command execution function
             start_mcp_commands(command_data, secrets, agent_name)
