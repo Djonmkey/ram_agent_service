@@ -161,14 +161,27 @@ def process_chat_model_response(task_data: dict):
         immediate_response = escape_system_text_with_command_escape_text(response)
 
         # Chat back that we are still processing
-        enqueue_output_action(agent_name, immediate_response) # TODO: REview
-                
-        # Generate the new prompt with command results
-        next_prompt = process_mcp_commands(response, initial_query)
+        enqueue_output_action(agent_name, immediate_response, meta_data)
 
-        # Recursive call with the new prompt and incremented depth
-        # SET DEPTH ON Trigger and increment recursion_depth here e.g. recursion_depth + 1
-        process_chat_model_request(task_data)
+        # Generate the new prompt with command results
+        initial_prompt = meta_data.get("initial_prompt", "")
+        next_prompt = process_mcp_commands(agent_name, response, initial_prompt)
+
+        # Check for recustion
+        DEFAULT_MAX_RECURSION_DEPTH = 3 # Allow initial call + 2 rounds of MCP commands
+        chat_model_config = get_chat_model_config(agent_name)
+        max_recusion_depth = chat_model_config.get("max_recusion_depth", DEFAULT_MAX_RECURSION_DEPTH)
+        recursion_depth = meta_data.get("recursion_depth", 0)
+        recursion_depth = recursion_depth + 1
+        meta_data["recursion_depth"] = recursion_depth
+
+        if recursion_depth >= max_recusion_depth:
+            print(f"Max recursion depth ({max_recusion_depth}) reached for query: {response[:50]}...")
+            error_response = "Max recursion depth ({max_recusion_depth}) reached for with response: \n" + response
+            enqueue_output_action(agent_name, error_response, meta_data)
+        else:
+            task_data["prompt"] = next_prompt
+            process_chat_model_request(task_data)
     else:
         # Load Output
         enqueue_output_action(agent_name, response, meta_data)
