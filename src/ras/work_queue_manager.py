@@ -77,6 +77,8 @@ def enqueue_input_trigger(agent_name: str, contents: Dict) -> None:
     :param agent_name: Name of the agent submitting the task
     :param contents: A JSON string describing the task
     """
+    contents["agent_name"] = agent_name
+    
     json_string = json.dumps(contents) 
 
     input_trigger_queue.put(json_string)
@@ -103,14 +105,35 @@ def enqueue_tools_and_data(agent_name: str, contents: str) -> None:
 
 def process_chat_model_request(task_data: dict):
     agent_name = task_data["agent_name"]
+    prompt = task_data["prompt"]
     chat_model_config = get_chat_model_config(agent_name)
     python_code_module = chat_model_config["python_code_module"]
     function_name = chat_model_config.get("handler_function", "ask_chat_model")
 
-    # Load chat model on new thread and execute.
-    module = importlib.import_module(python_code_module)
-    func: Callable = getattr(module, function_name)
-    thread = threading.Thread(target=func, args=(agent_name,), daemon=True)
+    # Convert file path to module path
+    # Example: "src/chat_models/chat_model_openai.py" -> "chat_models.chat_model_openai"
+    if python_code_module.endswith(".py"):
+        python_code_module = python_code_module[:-3]  # Remove .py extension
+    module_path = python_code_module.replace("/", ".")
+    
+    # If it starts with src/, remove that prefix for proper importing
+    if module_path.startswith("src."):
+        module_path = module_path[4:]
+
+    # Dynamically import the module
+    module = importlib.import_module(module_path)
+    
+    # If we're dealing with a class that needs to be instantiated
+    if function_name == "ask_chat_model" and hasattr(module, "get_gpt_handler"):
+        # Get or create the handler instance
+        handler = module.get_gpt_handler(agent_name)
+        # Call the method on the instance
+        thread = threading.Thread(target=handler.ask_chat_model, args=(prompt,), daemon=True)
+    else:
+        # For functions that don't require a class instance
+        func: Callable = getattr(module, function_name)
+        thread = threading.Thread(target=func, args=(agent_name, prompt), daemon=True)
+    
     thread.start()
 
 def process_input_trigger(task_data: dict):

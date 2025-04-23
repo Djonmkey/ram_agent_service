@@ -68,7 +68,7 @@ class GPTThreadHandler:
         def _start_async_worker(self):
             asyncio.run(self._process_queue())
 
-        self.worker_thread = threading.Thread(target=self._start_async_worker, daemon=True)
+        self.worker_thread = threading.Thread(target=_start_async_worker, daemon=True)
         self.worker_thread.start()
 
     async def _process_queue(self):

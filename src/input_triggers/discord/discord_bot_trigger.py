@@ -117,7 +117,7 @@ class DiscordBotTrigger(InputTrigger):
             ack_message = await message.channel.send("Working on it...")
 
             input_trigger_content = {
-                "content": message.content,
+                "prompt": message.content,
                 "timestamp": message.created_at.isoformat(),
                 "meta_data": {
                     "message_id": message.id,
