@@ -1,6 +1,7 @@
 import discord
 import asyncio
 import logging
+import threading
 from discord.ext import commands
 from typing import Optional, Dict, Any
 
@@ -15,6 +16,9 @@ from ras.agent_config_buffer import get_output_action_secrets
 
 # Set up logging
 logger = logging.getLogger(__name__)
+
+# Create a semaphore to ensure only one Discord bot operates at a time
+discord_semaphore = threading.Semaphore(1)
 
 async def send_message(
     channel: discord.abc.Messageable,
@@ -57,12 +61,22 @@ def process_output_action(agent_name: str, chat_model_response: str, meta_data: 
     Processes the output from a chat model and sends it to a Discord channel using metadata.
 
     This function initializes a Discord bot from `meta_data`, retrieves the channel, and sends the message.
+    A semaphore ensures only one instance of this function can access Discord at a time.
 
     :param agent_name: The agent's name generating the output.
     :param chat_model_response: The response from the chat model.
     :param meta_data: Metadata dictionary that must include:
                       - "channel_id": Discord channel to send the message to.
                       The bot token is retrieved from the agent's output action secrets.
+    """
+    # Acquire the semaphore to ensure only one Discord bot operates at a time
+    with discord_semaphore:
+        _process_discord_output(agent_name, chat_model_response, meta_data)
+
+def _process_discord_output(agent_name: str, chat_model_response: str, meta_data: dict) -> None:
+    """
+    Internal function that handles the actual Discord bot operation.
+    This is protected by a semaphore in the calling function.
     """
     channel_id = meta_data.get("channel_id")
 
