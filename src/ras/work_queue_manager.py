@@ -120,6 +120,7 @@ def process_chat_model_request(task_data: dict):
     agent_name = task_data["agent_name"]
     prompt = task_data["prompt"]
     meta_data = task_data.get("meta_data", {})
+    meta_data["initial_prompt"] = prompt
     chat_model_config = get_chat_model_config(agent_name)
     python_code_module = chat_model_config["python_code_module"]
 
