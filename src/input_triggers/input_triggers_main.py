@@ -19,7 +19,6 @@ from ras.work_queue_manager import enqueue_chat_model_request
 
 # Now imports relative to src should work if sys.path is configured correctly
 from input_triggers.input_triggers import InputTrigger
-from src.chat_models.chat_model_openai import get_gpt_handler
 
 # Use logging instead of print for better control
 logger = logging.getLogger(__name__)
@@ -100,8 +99,8 @@ def ask_gpt(prompt: str, agent_config_data: Dict[str, Any]) -> str:
     Returns:
         The response from the GPT model.
     """
-    gpt_handler = get_gpt_handler(agent_config_data)
-    return gpt_handler.ask_gpt_sync(prompt)
+    agent_name = agent_config_data["name"]
+    enqueue_chat_model_request(agent_name, prompt)
 
 def ask_gpt_async(prompt: str, agent_config_data: Dict[str, Any], callback=None):
     """

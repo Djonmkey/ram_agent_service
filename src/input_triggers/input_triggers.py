@@ -22,7 +22,6 @@ DEFAULT_MCP_COMMANDS_PATH = SRC_DIR / "tools_and_data" / "commands.json"
 DEFAULT_MCP_SECRETS_PATH = SRC_DIR / "tools_and_data" / "secrets.json"
 DEFAULT_MCP_MODULES_DIR = ""
 
-from src.chat_models.chat_model_openai import get_gpt_handler
 from ras.work_queue_manager import enqueue_input_trigger
 
 class InputTrigger(ABC):
@@ -310,10 +309,7 @@ class InputTrigger(ABC):
             recursion_depth: Internal counter to prevent infinite loops.
         """
         MAX_RECURSION_DEPTH = 3 # Allow initial call + 2 rounds of MCP commands
-        if get_gpt_handler is None:
-            self.logger.error("GPT Handler not available. Cannot execute AI agent.")
-            callback("Error: AI agent is not configured.")
-            return
+
 
         prompt_to_send = current_prompt if current_prompt is not None else initial_query
 

@@ -78,7 +78,7 @@ def enqueue_input_trigger(agent_name: str, contents: Dict) -> None:
     :param contents: A JSON string describing the task
     """
     contents["agent_name"] = agent_name
-    
+
     json_string = json.dumps(contents) 
 
     input_trigger_queue.put(json_string)
@@ -123,16 +123,11 @@ def process_chat_model_request(task_data: dict):
     # Dynamically import the module
     module = importlib.import_module(module_path)
     
-    # If we're dealing with a class that needs to be instantiated
-    if function_name == "ask_chat_model" and hasattr(module, "get_gpt_handler"):
-        # Get or create the handler instance
-        handler = module.get_gpt_handler(agent_name)
-        # Call the method on the instance
-        thread = threading.Thread(target=handler.ask_chat_model, args=(prompt,), daemon=True)
-    else:
-        # For functions that don't require a class instance
-        func: Callable = getattr(module, function_name)
-        thread = threading.Thread(target=func, args=(agent_name, prompt), daemon=True)
+    # Get the handler instance
+    handler = module.init_chat_model(agent_name)
+    
+    # Call the method on the instance
+    thread = threading.Thread(target=handler.ask_chat_model, args=(prompt,), daemon=True)
     
     thread.start()
 

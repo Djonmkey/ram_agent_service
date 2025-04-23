@@ -181,7 +181,7 @@ def patch_gpt_handler(handler: 'GPTThreadHandler'):
     try:
         # Store references to the original methods of *this specific instance*
         original_ask_gpt = enqueue_input_trigger(None, None)
-        original_ask_gpt_sync = handler.ask_gpt_sync
+        original_ask_gpt_sync = enqueue_input_trigger(None, None)
     except AttributeError as e:
         print(f"Failed to get methods for patching on handler instance: {e}")
         return # Cannot patch if methods don't exist
@@ -261,8 +261,8 @@ def patch_gpt_handler(handler: 'GPTThreadHandler'):
 
     try:
         # Apply the patches TO THE SPECIFIC HANDLER INSTANCE
-        handler.ask_chat_model = patched_ask_gpt
-        handler.ask_gpt_sync = patched_ask_gpt_sync
+        handler.ask_chat_model_async = enqueue_input_trigger(None, None)
+        handler.ask_chat_model = enqueue_input_trigger(None, None)
         # print(f"GPT handler instance patched for logging.") # Less verbose logging
     except Exception as e:
         print(f"Failed to apply patches to GPT handler instance: {e.__class__.__name__}: {e}")

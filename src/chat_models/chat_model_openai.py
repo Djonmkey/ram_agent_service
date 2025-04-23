@@ -65,7 +65,7 @@ class GPTThreadHandler:
         self.executor = ThreadPoolExecutor(max_workers=4)
         
         # Start the worker thread
-        def _start_async_worker(self):
+        def _start_async_worker():
             asyncio.run(self._process_queue())
 
         self.worker_thread = threading.Thread(target=_start_async_worker, daemon=True)
@@ -199,7 +199,7 @@ class GPTThreadHandler:
         except Exception as e:
             print(f"Error logging raw chat: {e}")
     
-    def ask_chat_model(self, prompt: str, callback: Optional[Callable[[str], None]] = None):
+    def ask_chat_model_async(self, prompt: str, callback: Optional[Callable[[str], None]] = None):
         """
         Queue a request to the GPT model.
         
@@ -210,7 +210,7 @@ class GPTThreadHandler:
         request = GPTRequest(prompt, callback)
         self.request_queue.put(request)
     
-    def ask_gpt_sync(self, prompt: str):
+    def ask_chat_model(self, prompt: str):
         """
         Send a request to the GPT model and wait for the response.
         This method blocks until the response is received.
@@ -226,7 +226,7 @@ class GPTThreadHandler:
         def callback(response: str):
             response_queue.put(response)
         
-        self.ask_chat_model(prompt, callback)
+        self.ask_chat_model_async(prompt, callback)
         
         # Wait for the response
         enqueue_chat_model_response(self.agent_name, response_queue.get())
@@ -245,7 +245,7 @@ class GPTThreadHandler:
 # Singleton instance
 _gpt_handler = None
 
-def get_gpt_handler(agent_name) -> GPTThreadHandler:
+def init_chat_model(agent_name) -> GPTThreadHandler:
     """Get the singleton instance of the GPTThreadHandler."""
     global _gpt_handler
     if _gpt_handler is None:
