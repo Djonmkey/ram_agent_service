@@ -120,15 +120,16 @@ def process_chat_model_request(task_data: dict):
     if module_path.startswith("src."):
         module_path = module_path[4:]
 
-    # Dynamically import the module
+    # Import the module dynamically
     module = importlib.import_module(module_path)
-    
-    # Get the handler instance
-    handler = module.init_chat_model(agent_name)
-    
-    # Call the method on the instance
-    thread = threading.Thread(target=handler.ask_chat_model, args=(prompt,), daemon=True)
-    
+
+    # Start the thread
+    thread = threading.Thread(
+        target=module.ask_chat_model,
+        args=(agent_name, prompt),
+        daemon=True
+    )
+
     thread.start()
 
 def process_input_trigger(task_data: dict):
