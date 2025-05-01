@@ -104,8 +104,12 @@ def get_tools_and_data_mcp_commands_config(agent_name: str) -> Dict[str, Any]:
     Returns:
         Dictionary containing parsed MCP commands configuration
     """
-    json_string = global_tools_and_data_mcp_commands_config[agent_name]
-    return json.loads(json_string)
+    if agent_name in global_tools_and_data_mcp_commands_config:
+        json_string = global_tools_and_data_mcp_commands_config[agent_name]
+        return json.loads(json_string)
+    else:
+        logger.warning(f"No MCP commands config found for agent: {agent_name}")
+        return {}
 
 ## MCP Secrets
 def set_tools_and_data_mcp_commands_secrets(agent_name: str, tools_and_data_mcp_commands_secrets: Dict[str, Any]) -> None:
@@ -130,8 +134,12 @@ def get_tools_and_data_mcp_commands_secrets(agent_name: str) -> Dict[str, Any]:
     Returns:
         Dictionary containing parsed MCP commands secrets
     """
-    json_string = global_tools_and_data_mcp_commands_secrets[agent_name]
-    return json.loads(json_string)
+    if agent_name in global_tools_and_data_mcp_commands_secrets:
+        json_string = global_tools_and_data_mcp_commands_secrets[agent_name]
+        return json.loads(json_string)
+    else:
+        logger.warning(f"No MCP commands secrets found for agent: {agent_name}")
+        return {}
 
 # Chat Model
 ## Chat Model System Instructions
