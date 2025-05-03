@@ -28,6 +28,7 @@ class FileChangeHandler(FileSystemEventHandler):
         self.logger = listener_instance.logger # Use listener's logger
         self.debounce_cache: Dict[Path, asyncio.TimerHandle] = {}
         self.debounce_seconds = listener_instance.debounce_seconds
+        self.last_processed: Dict[Path, datetime] = {}  # Track last processed time for each path
 
     def _schedule_processing(self, event_path: Path, event_type: str):
         """Schedules processing after a debounce period."""
@@ -53,6 +54,18 @@ class FileChangeHandler(FileSystemEventHandler):
         self.logger.debug(f"Debounce finished for: {path} ({event_type})")
         # Remove from cache now that it's being processed
         self.debounce_cache.pop(path, None)
+        
+        # Prevent duplicate messages in the same second
+        current_time = datetime.now()
+        if path in self.last_processed:
+            time_diff = (current_time - self.last_processed[path]).total_seconds()
+            if time_diff < 1.0:  # Less than 1 second since last processing
+                self.logger.debug(f"Skipping duplicate event for {path} (processed {time_diff:.2f}s ago)")
+                return
+        
+        # Update last processed time
+        self.last_processed[path] = current_time
+        
         # Call the listener's processing method in the main event loop
         asyncio.run_coroutine_threadsafe(
             self.listener.process_file_event(str(path), event_type),
