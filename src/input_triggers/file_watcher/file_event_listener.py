@@ -5,6 +5,8 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileSystemEvent, FileCreatedEvent, FileModifiedEvent
 from typing import Optional, Dict, Any, List, Set
 from pathlib import Path
+from datetime import datetime, timezone
+import base64
 
 # Ensure src is in path for sibling imports
 import sys
@@ -13,6 +15,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from input_triggers.input_triggers import InputTrigger
+from ras import work_queue_manager
 
 # Default debounce time in seconds (can be overridden in trigger config)
 DEFAULT_DEBOUNCE_SECONDS = 1.0
@@ -344,10 +347,33 @@ class FileEventListener(InputTrigger):
 
             # Define the callback for the AI response
             def file_event_callback(ai_response: str):
+                meta_data = {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "file_path_str": file_path_str,
+                    "event_type": event_type,
+                    "encoding": "base64"
+                }
+
+                agent_name = self.agent_config_data["name"]
+
+                def image_to_base64_str(image_path: str) -> str:
+                    """
+                    Convert an image file to a base64-encoded string.
+                    
+                    :param image_path: Path to the image file.
+                    :return: Base64-encoded string representation of the image.
+                    """
+                    with open(image_path, "rb") as image_file:
+                        encoded_bytes = base64.b64encode(image_file.read())
+                        return encoded_bytes.decode("utf-8")
+    
+                message_content_image = image_to_base64_str(file_path_str)
+
+                work_queue_manager.enqueue_input_trigger(
+                    agent_name, message_content_image, meta_data
+                )
+                
                 self.logger.info(f"AI processing finished for file event: {file_path_str} ({event_type})")
-                self.logger.debug(f"AI Response: {ai_response}")
-                # Potentially take action based on AI response (e.g., move file, write report)
-                # This part is application-specific.
 
             # Execute the AI agent asynchronously
             self._execute_ai_agent_async(
