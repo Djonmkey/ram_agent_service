@@ -5,7 +5,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileSystemEvent, FileCreatedEvent, FileModifiedEvent
 from typing import Optional, Dict, Any, List, Set
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import base64
 
 # Ensure src is in path for sibling imports
@@ -26,50 +26,50 @@ class FileChangeHandler(FileSystemEventHandler):
     def __init__(self, listener_instance: 'FileEventListener'):
         self.listener = listener_instance
         self.logger = listener_instance.logger # Use listener's logger
-        self.debounce_cache: Dict[Path, asyncio.TimerHandle] = {}
+        self.debounce_expiry: Dict[Path, datetime] = {}  # Track expiry time for each path
         self.debounce_seconds = listener_instance.debounce_seconds
-        self.last_processed: Dict[Path, datetime] = {}  # Track last processed time for each path
 
     def _schedule_processing(self, event_path: Path, event_type: str):
-        """Schedules processing after a debounce period."""
-        path_obj = Path(event_path)
-
-        # Cancel any existing timer for this path
-        if path_obj in self.debounce_cache:
-            self.debounce_cache[path_obj].cancel()
-            self.logger.debug(f"Debounce timer cancelled for: {path_obj}")
-
-        # Schedule new processing call
-        # Use the listener's loop instead of trying to get a running loop
-        self.debounce_cache[path_obj] = self.listener.loop.call_later(
-            self.debounce_seconds,
-            self._process_debounced_event,
-            path_obj,
-            event_type
-        )
-        self.logger.debug(f"Processing scheduled for '{path_obj}' ({event_type}) in {self.debounce_seconds}s")
-
-    def _process_debounced_event(self, path: Path, event_type: str):
-        """Called after debounce timeout."""
-        self.logger.debug(f"Debounce finished for: {path} ({event_type})")
-        # Remove from cache now that it's being processed
-        self.debounce_cache.pop(path, None)
+        """
+        Processes events immediately while ensuring no duplicate events
+        are processed within the debounce window.
         
-        # Prevent duplicate messages in the same second
+        Instead of using timers, this implementation:
+        1. Checks if a duplicate event exists that hasn't expired
+        2. If yes, ignores the new event
+        3. If no, processes the event immediately and sets an expiry time
+        
+        Args:
+            event_path: Path to the file that triggered the event
+            event_type: Type of event (created, modified, etc.)
+        """
+        path_obj = Path(event_path)
         current_time = datetime.now()
-        if path in self.last_processed:
-            time_diff = (current_time - self.last_processed[path]).total_seconds()
-            if time_diff < 1.0:  # Less than 1 second since last processing
-                self.logger.debug(f"Skipping duplicate event for {path} (processed {time_diff:.2f}s ago)")
+        
+        # Check if we have an unexpired event for this path
+        if path_obj in self.debounce_expiry:
+            expiry_time = self.debounce_expiry[path_obj]
+            
+            # If the existing event hasn't expired yet, skip this event
+            if current_time < expiry_time:
+                time_remaining = (expiry_time - current_time).total_seconds()
+                self.logger.debug(
+                    f"Skipping duplicate event for {path_obj} - debounce period active "
+                    f"(expires in {time_remaining:.2f}s)"
+                )
                 return
         
-        # Update last processed time
-        self.last_processed[path] = current_time
+        # Set expiry time for this path
+        expiry_time = current_time + timedelta(seconds=self.debounce_seconds)
+        self.debounce_expiry[path_obj] = expiry_time
         
-        # Call the listener's processing method in the main event loop
+        # Log that we're processing this event
+        self.logger.debug(f"Processing event for: {path_obj} ({event_type})")
+        
+        # Process the event immediately
         asyncio.run_coroutine_threadsafe(
-            self.listener.process_file_event(str(path), event_type),
-            self.listener.loop # Use the listener's loop
+            self.listener.process_file_event(str(path_obj), event_type),
+            self.listener.loop
         )
 
     def _should_process_file_event(self, file_path: Path) -> bool:
@@ -302,11 +302,9 @@ class FileEventListener(InputTrigger):
         else:
              self.logger.info("Watchdog observer was not running.")
 
-        # Clean up debounce timers
-        for timer in self.event_handler.debounce_cache.values():
-             timer.cancel()
-        self.event_handler.debounce_cache.clear()
-        self.logger.debug("Cleared pending debounce timers.")
+        # Clear debounce expiry tracking
+        self.event_handler.debounce_expiry.clear()
+        self.logger.debug("Cleared debounce expiry tracking.")
 
         self.logger.info("FileEventListener stopped.")
 
@@ -338,61 +336,34 @@ class FileEventListener(InputTrigger):
             if not file_path.is_file():
                  self.logger.warning(f"File no longer exists or is not a file: {file_path}. Skipping processing.")
                  return
+            
+            meta_data = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "file_path_str": file_path_str,
+                "event_type": event_type,
+                "encoding": "base64"
+            }
 
-            # Read file content
-            # Consider adding encoding options or binary read based on config/file type
-            try:
-                content = file_path.read_text(encoding='utf-8')
-                self.logger.debug(f"Read {len(content)} characters from {file_path}")
-            except Exception as read_err:
-                 self.logger.error(f"Error reading file {file_path}: {read_err}", exc_info=True)
-                 return # Cannot process if read fails
+            agent_name = self.agent_config_data["name"]
 
-            # Construct the initial query for the AI agent
-            initial_query = (
-                f"A file event occurred:\n"
-                f"File Path: {file_path_str}\n"
-                f"Event Type: {event_type}\n\n"
-                f"File Content:\n"
-                f"```\n{content}\n```\n\n"
-                f"Please process this file event and its content."
-            )
-
-            # Define the callback for the AI response
-            def file_event_callback(ai_response: str):
-                meta_data = {
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "file_path_str": file_path_str,
-                    "event_type": event_type,
-                    "encoding": "base64"
-                }
-
-                agent_name = self.agent_config_data["name"]
-
-                def image_to_base64_str(image_path: str) -> str:
-                    """
-                    Convert an image file to a base64-encoded string.
-                    
-                    :param image_path: Path to the image file.
-                    :return: Base64-encoded string representation of the image.
-                    """
-                    with open(image_path, "rb") as image_file:
-                        encoded_bytes = base64.b64encode(image_file.read())
-                        return encoded_bytes.decode("utf-8")
-    
-                message_content_image = image_to_base64_str(file_path_str)
-
-                work_queue_manager.enqueue_input_trigger(
-                    agent_name, message_content_image, meta_data
-                )
+            def image_to_base64_str(image_path: str) -> str:
+                """
+                Convert an image file to a base64-encoded string.
                 
-                self.logger.info(f"AI processing finished for file event: {file_path_str} ({event_type})")
+                :param image_path: Path to the image file.
+                :return: Base64-encoded string representation of the image.
+                """
+                with open(image_path, "rb") as image_file:
+                    encoded_bytes = base64.b64encode(image_file.read())
+                    return encoded_bytes.decode("utf-8")
 
-            # Execute the AI agent asynchronously
-            self._execute_ai_agent_async(
-                initial_query=initial_query,
-                callback=file_event_callback
+            message_content_image = image_to_base64_str(file_path_str)
+
+            work_queue_manager.enqueue_input_trigger(
+                agent_name, message_content_image, meta_data
             )
+            
+            self.logger.info(f"AI processing finished for file event: {file_path_str} ({event_type})")
 
         except Exception as e:
             self.logger.error(f"Error during processing of file event for {file_path_str}: {e}", exc_info=True)
