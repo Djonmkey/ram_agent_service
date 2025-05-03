@@ -39,8 +39,8 @@ class FileChangeHandler(FileSystemEventHandler):
             self.logger.debug(f"Debounce timer cancelled for: {path_obj}")
 
         # Schedule new processing call
-        loop = asyncio.get_running_loop()
-        self.debounce_cache[path_obj] = loop.call_later(
+        # Use the listener's loop instead of trying to get a running loop
+        self.debounce_cache[path_obj] = self.listener.loop.call_later(
             self.debounce_seconds,
             self._process_debounced_event,
             path_obj,
