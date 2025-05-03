@@ -56,13 +56,61 @@ class FileChangeHandler(FileSystemEventHandler):
             self.listener.loop # Use the listener's loop
         )
 
+    def _should_process_file_event(self, file_path: Path) -> bool:
+        """
+        Determines if a file event should be processed based on our watch configuration.
+        
+        Args:
+            file_path: The resolved Path object of the file that triggered the event
+            
+        Returns:
+            bool: True if the event should be processed, False otherwise
+        """
+        # If we have specific files to watch, check if this file matches any of them
+        if self.listener.resolved_watch_files:
+            # Compare normalized string paths for more reliable matching
+            file_path_str = str(file_path).lower()
+            for watch_file in self.listener.resolved_watch_files:
+                if str(watch_file).lower() == file_path_str:
+                    return True
+                
+            # If not a specific watched file, check if it's in a watched directory
+            for dir_path in self.listener.resolved_watch_directories:
+                if str(file_path).startswith(str(dir_path)):
+                    return True
+                
+            # Not in our watched files or directories
+            return False
+        
+        # If we don't have specific files to watch, check if it's in a watched directory
+        elif self.listener.resolved_watch_directories:
+            for dir_path in self.listener.resolved_watch_directories:
+                if str(file_path).startswith(str(dir_path)):
+                    return True
+            return False
+        
+        # If we have neither watched files nor directories (shouldn't happen due to validation)
+        return False
+
     def on_created(self, event: FileSystemEvent):
         if not event.is_directory:
+            path = Path(event.src_path).resolve()
+            
+            # Check if we should process this file event
+            if not self._should_process_file_event(path):
+                return
+            
             self.logger.debug(f"Watchdog detected creation: {event.src_path}")
             self._schedule_processing(event.src_path, "created")
 
     def on_modified(self, event: FileSystemEvent):
         if not event.is_directory:
+            path = Path(event.src_path).resolve()
+            
+            # Check if we should process this file event
+            if not self._should_process_file_event(path):
+                return
+            
             self.logger.debug(f"Watchdog detected modification: {event.src_path}")
             self._schedule_processing(event.src_path, "modified")
 
@@ -80,8 +128,8 @@ class FileChangeHandler(FileSystemEventHandler):
 
 class FileEventListener(InputTrigger):
     """
-    An input trigger that watches specified directories for file creation
-    or modification events and processes them using an AI agent.
+    An input trigger that watches specified directories and/or individual files
+    for file creation or modification events and processes them using an AI agent.
     """
 
     def __init__(
@@ -98,10 +146,14 @@ class FileEventListener(InputTrigger):
             trigger_config_data: Dictionary containing configuration for this trigger.
                                  Expected keys:
                                  - 'watch_directories': List of directory paths (strings) to monitor.
+                                 - 'watch_files': List of specific file paths (strings) to monitor.
+                                                  The parent directory of each file will be watched,
+                                                  and events will be filtered to only process the specified files.
                                  - 'watch_patterns': (Optional) List of glob patterns (e.g., ['*.txt', '*.csv'])
                                                      to filter files within watched directories. If omitted,
                                                      all file events are considered.
                                  - 'recursive': (Optional) Boolean indicating whether to watch subdirectories (defaults to True).
+                                                This only applies to watch_directories, not watch_files.
                                  - 'debounce_seconds': (Optional) Float seconds to wait after the last event before processing (defaults to 1.0).
             trigger_secrets: Dictionary containing secrets (not directly used by this trigger,
                              but passed for consistency).
@@ -111,28 +163,40 @@ class FileEventListener(InputTrigger):
 
         # --- Configuration ---
         self.watch_directories: List[str] = self.trigger_config.get("watch_directories", [])
-        self.watch_files = self.trigger_config.get("watch_files", []) # Can be None or empty
+        self.watch_files: List[str] = self.trigger_config.get("watch_files", []) # Can be None or empty
         self.watch_patterns: Optional[List[str]] = self.trigger_config.get("watch_patterns") # Can be None
         self.recursive: bool = self.trigger_config.get("recursive", True)
         self.debounce_seconds: float = self.trigger_config.get("debounce_seconds", DEFAULT_DEBOUNCE_SECONDS)
 
         if not self.watch_directories and not self.watch_files:
-             self.logger.error("Configuration error: 'watch_directories' and watch_files lists are missing or empty.")
+             self.logger.error("Configuration error: 'watch_directories' and 'watch_files' lists are missing or empty.")
              # Consider raising ValueError if this is critical
              raise ValueError("'watch_directories' or 'watch_files' must be specified in the trigger configuration.")
 
-        # Validate paths early?
-        self.resolved_watch_paths: List[Path] = []
+        # Validate and resolve directory paths
+        self.resolved_watch_directories: List[Path] = []
         for dir_path in self.watch_directories:
             path = Path(dir_path).resolve() # Resolve relative to CWD or expect absolute
             if not path.is_dir():
                  self.logger.warning(f"Watch directory does not exist or is not a directory: {path}. Skipping.")
             else:
-                 self.resolved_watch_paths.append(path)
+                 self.resolved_watch_directories.append(path)
 
-        if not self.resolved_watch_paths:
-             self.logger.error("No valid watch directories found after resolving paths.")
-             raise ValueError("No valid directories specified in 'watch_directories'.")
+        # Validate and resolve file paths
+        self.resolved_watch_files: List[Path] = []
+        for file_path in self.watch_files:
+            path = Path(file_path).resolve() # Resolve relative to CWD or expect absolute
+            if not path.exists():
+                 self.logger.warning(f"Watch file does not exist: {path}. Skipping.")
+            elif not path.is_file():
+                 self.logger.warning(f"Watch path is not a file: {path}. Skipping.")
+            else:
+                 self.resolved_watch_files.append(path)
+
+        # Check if we have any valid paths to watch
+        if not self.resolved_watch_directories and not self.resolved_watch_files:
+             self.logger.error("No valid watch directories or files found after resolving paths.")
+             raise ValueError("No valid paths specified in 'watch_directories' or 'watch_files'.")
 
 
         # --- Watchdog Setup ---
@@ -140,7 +204,8 @@ class FileEventListener(InputTrigger):
         self.observer = Observer()
 
         self.logger.info(f"File Event Listener configured for Agent '{self.agent_name}'")
-        self.logger.info(f"  Watching Directories: {[str(p) for p in self.resolved_watch_paths]}")
+        self.logger.info(f"  Watching Directories: {[str(p) for p in self.resolved_watch_directories]}")
+        self.logger.info(f"  Watching Files: {[str(p) for p in self.resolved_watch_files]}")
         self.logger.info(f"  Recursive: {self.recursive}")
         self.logger.info(f"  Patterns: {self.watch_patterns if self.watch_patterns else 'All files'}")
         self.logger.info(f"  Debounce Time: {self.debounce_seconds}s")
@@ -155,19 +220,26 @@ class FileEventListener(InputTrigger):
         await super().initialize() # Gets loop, logs base init
         self.logger.info("Initializing File Event Listener...")
 
-        # Schedule observers
-        if not self.resolved_watch_paths:
-             self.logger.error("Cannot initialize: No valid directories to watch.")
-             raise RuntimeError("File watcher initialization failed: No valid directories.")
-
-        for path in self.resolved_watch_paths:
+        # Schedule observers for directories
+        for path in self.resolved_watch_directories:
             try:
                 self.observer.schedule(self.event_handler, str(path), recursive=self.recursive)
                 self.logger.info(f"Scheduled observer for directory: {path}")
             except Exception as e:
                 self.logger.error(f"Failed to schedule observer for directory {path}: {e}", exc_info=True)
-                # Decide if one failure should stop the whole trigger
-                # For now, log and continue trying others
+                # Log and continue trying others
+
+        # Schedule observers for individual files
+        for path in self.resolved_watch_files:
+            try:
+                # For individual files, we need to watch the parent directory
+                # and filter events for the specific file
+                parent_dir = path.parent
+                self.observer.schedule(self.event_handler, str(parent_dir), recursive=False)
+                self.logger.info(f"Scheduled observer for file: {path} (watching parent: {parent_dir})")
+            except Exception as e:
+                self.logger.error(f"Failed to schedule observer for file {path}: {e}", exc_info=True)
+                # Log and continue trying others
 
         if not self.observer.emitters:
              self.logger.error("No observers were successfully scheduled.")
@@ -285,4 +357,3 @@ class FileEventListener(InputTrigger):
 
         except Exception as e:
             self.logger.error(f"Error during processing of file event for {file_path_str}: {e}", exc_info=True)
-
