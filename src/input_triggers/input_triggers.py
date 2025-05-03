@@ -55,8 +55,8 @@ class InputTrigger(ABC):
 
         # Get configurable paths from the trigger-specific config, falling back to defaults
         # Note: We now use self.trigger_config instead of self.config
-        self.mcp_commands_path = Path(self.agent_config_data["tools_and_data"].get("mcp_commands_config_file", DEFAULT_MCP_COMMANDS_PATH))
-        self.mcp_secrets_path = Path(self.agent_config_data["tools_and_data"].get("mcp_commands_secrets_file", DEFAULT_MCP_SECRETS_PATH))
+        self.mcp_commands_path = Path(self.agent_config_data.get("tools_and_data", {}).get("mcp_commands_config_file", DEFAULT_MCP_COMMANDS_PATH))
+        self.mcp_secrets_path = Path(self.agent_config_data.get("tools_and_data", {}).get("mcp_commands_secrets_file", DEFAULT_MCP_SECRETS_PATH))
         self.mcp_modules_dir = Path(self.trigger_config.get("mcp_modules_dir", DEFAULT_MCP_MODULES_DIR))
 
         self.logger.debug(f"Base trigger initialized for Agent '{self.agent_name}', Trigger '{self.name}'")

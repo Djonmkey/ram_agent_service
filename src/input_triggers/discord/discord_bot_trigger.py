@@ -130,6 +130,10 @@ class DiscordBotTrigger(InputTrigger):
             if message.author == self.client.user:
                 return
 
+            if "channel_name" in self.trigger_config:
+                if message.channel.name != self.trigger_config["channel_name"]:
+                    return
+
             # Immediately respond to prevent timeout
             immediate_response = self.trigger_config.get("immediate_response", "Working...")
             ack_message = await message.channel.send(immediate_response)
