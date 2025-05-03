@@ -237,12 +237,13 @@ def ask_chat_model(agent_name: str, prompt: str, meta_data: Dict[str, Any]):
         for cmd in command_data.get("mcp_commands", [])
     )
 
-    if command_data.get("mcp_commands", []):
-        first_command = command_data.get("mcp_commands", [])[0]["system_text"]
-        system_content = (
+    system_content = (
             f"{base_instructions.strip()}\n\n"
             f"Available MCP commands:\n{command_descriptions}"
         )
+    
+    if command_data.get("mcp_commands", []):
+        first_command = command_data.get("mcp_commands", [])[0]["system_text"]
 
         system_content = system_content + f"\n\nIf additional information is required, respond with a single line for each MCP Command to execute.\n\nExample:\n{first_command}"
         system_content = system_content + "\nDo not use commands that are not explicitly mentioned in the list of Available MCP commands provided. This ensures that any requests made are within the scope of commands commands available to you."
