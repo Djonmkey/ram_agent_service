@@ -84,10 +84,12 @@ class FileEventListener(InputTrigger):
     or modification events and processes them using an AI agent.
     """
 
-    def __init__(self,
-                 agent_name: str,
-                 trigger_config_data: Optional[Dict[str, Any]] = None,
-                 trigger_secrets: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        agent_config_data: Dict[str, Any],
+        trigger_config_data: Optional[Dict[str, Any]] = None,
+        trigger_secrets: Optional[Dict[str, Any]] = None,
+    ):
         """
         Initializes the FileEventListener.
 
@@ -104,19 +106,20 @@ class FileEventListener(InputTrigger):
             trigger_secrets: Dictionary containing secrets (not directly used by this trigger,
                              but passed for consistency).
         """
-        super().__init__(agent_name, trigger_config_data, trigger_secrets)
+        super().__init__(agent_config_data, trigger_config_data, trigger_secrets)
         self.logger = logging.getLogger(f"{self.agent_name}.{self.name}") # Use specific logger
 
         # --- Configuration ---
         self.watch_directories: List[str] = self.trigger_config.get("watch_directories", [])
+        self.watch_files = self.trigger_config.get("watch_files", []) # Can be None or empty
         self.watch_patterns: Optional[List[str]] = self.trigger_config.get("watch_patterns") # Can be None
         self.recursive: bool = self.trigger_config.get("recursive", True)
         self.debounce_seconds: float = self.trigger_config.get("debounce_seconds", DEFAULT_DEBOUNCE_SECONDS)
 
-        if not self.watch_directories:
-             self.logger.error("Configuration error: 'watch_directories' list is missing or empty.")
+        if not self.watch_directories and not self.watch_files:
+             self.logger.error("Configuration error: 'watch_directories' and watch_files lists are missing or empty.")
              # Consider raising ValueError if this is critical
-             raise ValueError("'watch_directories' must be specified in the trigger configuration.")
+             raise ValueError("'watch_directories' or 'watch_files' must be specified in the trigger configuration.")
 
         # Validate paths early?
         self.resolved_watch_paths: List[Path] = []

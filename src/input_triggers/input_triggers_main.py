@@ -267,7 +267,7 @@ async def _load_and_initialize_single_trigger(
             listener = input_trigger_class(
                 agent_config_data=agent_config_data, # Pass the whole agent config
                 trigger_config_data=trigger_config_data,
-                trigger_secrets=trigger_secrets_data.get("secrets", {})
+                trigger_secrets=(trigger_secrets_data or {}).get("secrets", {})
             )
 
             # Unique listener name for the global dictionary
