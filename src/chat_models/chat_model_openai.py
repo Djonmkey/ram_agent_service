@@ -263,8 +263,27 @@ def ask_chat_model(agent_name: str, prompt: str, meta_data: Dict[str, Any]):
         # Add history messages to the conversation
         messages.extend(history_messages)
     
-    # Add the current user prompt
-    messages.append({"role": "user", "content": prompt})
+    if "isBase64Encoded" in meta_data:
+        encoding = meta_data["encoding"]
+        mime_type = meta_data["mime_type"]
+
+        chat_model_config = get_chat_model_config(agent_name)
+
+        text_prompt = chat_model_config.get("text_prompt", "")
+
+        content = [
+                {"type": "text", "text": f"{text_prompt}"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{mime_type};{encoding},{prompt}",
+                    }
+                }
+            ]
+        messages.append({"role": "user", "content": content})
+    else:
+        # Add the current user prompt
+        messages.append({"role": "user", "content": prompt})
 
     request_params = {
         "model": model,

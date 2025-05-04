@@ -341,26 +341,34 @@ class FileEventListener(InputTrigger):
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "file_path_str": file_path_str,
                 "event_type": event_type,
-                "encoding": "base64"
+                "encoding": self.trigger_config["encoding"],
+                "mime_type": self.trigger_config["mime_type"]
             }
 
             agent_name = self.agent_config_data["name"]
 
-            def image_to_base64_str(image_path: str) -> str:
+            def binary_to_base64_str(binary_file_path: str) -> str:
                 """
                 Convert an image file to a base64-encoded string.
                 
                 :param image_path: Path to the image file.
                 :return: Base64-encoded string representation of the image.
                 """
-                with open(image_path, "rb") as image_file:
+                with open(binary_file_path, "rb") as image_file:
                     encoded_bytes = base64.b64encode(image_file.read())
                     return encoded_bytes.decode("utf-8")
 
-            message_content_image = image_to_base64_str(file_path_str)
+            if self.trigger_config["encoding"] == "base64":
+                # Convert the file to a base64 string
+                message_content = binary_to_base64_str(file_path_str)
+                meta_data["isBase64Encoded"] = True
+            else:
+                # If not base64, just read the file content as a string
+                with open(file_path_str, "r", encoding="utf-8") as file:
+                    message_content = file.read()
 
             work_queue_manager.enqueue_input_trigger(
-                agent_name, message_content_image, meta_data
+                agent_name, message_content, meta_data
             )
             
             self.logger.info(f"AI processing finished for file event: {file_path_str} ({event_type})")
