@@ -201,7 +201,8 @@ def process_output_action(task_data: dict):
         # Example: "src/chat_models/chat_model_openai.py" -> "chat_models.chat_model_openai"
         if python_code_module.endswith(".py"):
             python_code_module = python_code_module[:-3]  # Remove .py extension
-        module_path = python_code_module.replace("/", ".")
+        module_path = python_code_module.replace("/", ".")      # Unix-style path to dot notation
+        module_path = python_code_module.replace("\\", ".")     # Windows-style path to dot notation
         
         # If it starts with src/, remove that prefix for proper importing
         if module_path.startswith("src."):
