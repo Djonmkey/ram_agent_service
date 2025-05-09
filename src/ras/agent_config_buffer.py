@@ -18,14 +18,32 @@ logger = logging.getLogger(__name__)
 # Global storage for all agent configurations
 global_agent_manifest_entry = {}
 global_agent_config = {}
+
 global_tools_and_data_mcp_commands_config = {}
 global_tools_and_data_mcp_commands_secrets = {}
+
 global_chat_model_system_instructions = {}
 global_chat_model_config = {}
 global_chat_model_secrets = {}
+
 global_output_action_config = {}
 global_output_action_secrets = {}
 
+global_input_augmentation_config = {}
+
+# Input Augmentation
+def set_input_augmentation_config(agent_name: str, input_augmentation_config: Dict[str, Any]) -> None:
+    json_string = json.dumps(input_augmentation_config)
+    global_input_augmentation_config[agent_name] = json_string
+
+
+def get_input_augmentation_config(agent_name: str) -> Dict[str, Any]:
+    if agent_name in global_input_augmentation_config:
+        json_string = global_input_augmentation_config[agent_name]
+        return json.loads(json_string)
+    else:
+        logger.warning(f"No Input Augmentation config found for agent: {agent_name}")
+        return {}
 
 # Agent Manifest
 def set_agent_manifest_entry(agent_name: str, agent_manifest_entry: Dict[str, Any]) -> None:
