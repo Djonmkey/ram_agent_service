@@ -22,7 +22,7 @@ SRC_DIR = Path(__file__).resolve().parent.parent.parent # Go up three levels: di
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from ras.agent_config_buffer import get_chat_model_config, get_output_action_config
+from ras.agent_config_buffer import get_chat_model_config, get_output_action_config, get_input_augmentation_config
 from tools_and_data.mcp_command_helper import contains_mcp_command, process_mcp_commands, escape_system_text_with_command_escape_text
 
 # Global thread-safe work queues
@@ -116,30 +116,62 @@ def enqueue_tools_and_data(agent_name: str, contents: str) -> None:
     """
     tools_and_data_queue.put(contents)
 
-def process_chat_model_request(task_data: dict):
-    agent_name = task_data["agent_name"]
-    prompt = task_data["prompt"]
-    meta_data = task_data.get("meta_data", {})
-    meta_data["initial_prompt"] = prompt
-    chat_model_config = get_chat_model_config(agent_name)
-    python_code_module = chat_model_config["python_code_module"]
+def get_python_code_module(python_code_module: str):
+    """
+    Get the Python code module for the given agent name.
 
+    :param agent_name: Name of the agent
+    :return: The Python code module path
+    """
     # Convert file path to module path
     # Example: "src/chat_models/chat_model_openai.py" -> "chat_models.chat_model_openai"
     if python_code_module.endswith(".py"):
         python_code_module = python_code_module[:-3]  # Remove .py extension
-    module_path = python_code_module.replace("/", ".")
-    
-    # If it starts with src/, remove that prefix for proper importing
-    if module_path.startswith("src."):
-        module_path = module_path[4:]
+    module_path = python_code_module.replace("/", ".")      # Unix-style path to dot notation
 
     # Import the module dynamically
     module = importlib.import_module(module_path)
 
+    return module
+
+def process_chat_model_request_thread(agent_name: str, prompt: str, meta_data: dict):
+    # Step 1: Execute Input Augmentation
+    input_augmentation_config = get_input_augmentation_config(agent_name)
+
+    if input_augmentation_config:
+        python_code_module = input_augmentation_config["python_code_module"]
+        module = get_python_code_module(python_code_module)
+
+        # Call the augment_prompt function from the loaded module
+        prompt = module.augment_prompt(agent_name, prompt, meta_data)
+
+    # Step 2: Execute the chat model module
+    chat_model_config = get_chat_model_config(agent_name)
+    python_code_module = chat_model_config["python_code_module"]
+
+    chat_model_config = get_chat_model_config(agent_name)
+    python_code_module = chat_model_config["python_code_module"]
+
+    # Import the module dynamically
+    module = get_python_code_module(python_code_module)
+
     # Start the thread
     thread = threading.Thread(
         target=module.ask_chat_model,
+        args=(agent_name, prompt, meta_data),
+        daemon=True
+    )
+
+    thread.start()
+
+def process_chat_model_request(task_data: dict):
+    agent_name = task_data["agent_name"]
+    prompt = task_data["prompt"]    
+    meta_data = task_data.get("meta_data", {})
+
+    # Start the thread
+    thread = threading.Thread(
+        target=process_chat_model_request_thread,
         args=(agent_name, prompt, meta_data),
         daemon=True
     )
