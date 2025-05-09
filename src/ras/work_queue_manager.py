@@ -128,26 +128,39 @@ def get_python_code_module(python_code_module: str):
     if python_code_module.endswith(".py"):
         python_code_module = python_code_module[:-3]  # Remove .py extension
     module_path = python_code_module.replace("/", ".")      # Unix-style path to dot notation
+    module_path = module_path.replace("\\", ".")     # Windows-style path to dot notation
+
+    # If it starts with src/, remove that prefix for proper importing
+    if module_path.startswith("src."):
+        module_path = module_path[4:]
 
     # Import the module dynamically
     module = importlib.import_module(module_path)
-
+        
     return module
 
-def process_chat_model_request_thread(agent_name: str, prompt: str, meta_data: dict):
-    # Step 1: Execute Input Augmentation
+def process_chat_model_input_augmentation(task_data):
+    agent_name = task_data["agent_name"]
+    prompt = task_data["prompt"]    
+    meta_data = task_data.get("meta_data", {})
+
+    # Imporant: We are already in a thread
     input_augmentation_config = get_input_augmentation_config(agent_name)
+    python_code_module = input_augmentation_config["python_code_module"]
+    module = get_python_code_module(python_code_module)
 
-    if input_augmentation_config:
-        python_code_module = input_augmentation_config["python_code_module"]
-        module = get_python_code_module(python_code_module)
+    # Step 1: Execute Input Augmentation
+    prompt = module.augment_prompt(agent_name, prompt, meta_data)
 
-        # Call the augment_prompt function from the loaded module
-        prompt = module.augment_prompt(agent_name, prompt, meta_data)
+    # Step 2: Execute Chat Model Request
+    task_data["prompt"] = prompt
+    process_chat_model_request(task_data)
 
-    # Step 2: Execute the chat model module
-    chat_model_config = get_chat_model_config(agent_name)
-    python_code_module = chat_model_config["python_code_module"]
+
+def process_chat_model_request(task_data: dict):
+    agent_name = task_data["agent_name"]
+    prompt = task_data["prompt"]    
+    meta_data = task_data.get("meta_data", {})
 
     chat_model_config = get_chat_model_config(agent_name)
     python_code_module = chat_model_config["python_code_module"]
@@ -163,27 +176,27 @@ def process_chat_model_request_thread(agent_name: str, prompt: str, meta_data: d
     )
 
     thread.start()
+    
 
-def process_chat_model_request(task_data: dict):
+def process_input_trigger(task_data: dict):
     agent_name = task_data["agent_name"]
     prompt = task_data["prompt"]    
     meta_data = task_data.get("meta_data", {})
 
-    # Start the thread
-    thread = threading.Thread(
-        target=process_chat_model_request_thread,
-        args=(agent_name, prompt, meta_data),
-        daemon=True
-    )
+    # Step 1: Execute Input Augmentation
+    input_augmentation_config = get_input_augmentation_config(agent_name)
 
-    thread.start()
+    if input_augmentation_config:
+        # Start the thread
+        thread = threading.Thread(
+            target=process_chat_model_input_augmentation,
+            args=(agent_name, prompt, meta_data),
+            daemon=True
+        )
 
-def process_input_trigger(task_data: dict):
-    # TODO: CHECK FOR INPUT AUGMENTATION
-    # IF INPUT AUGMENTATION, TRIGGER INPUT AUGMENTATION
-    # ELSE
-    # MAKE CHAT MODEL REQUEST
-    process_chat_model_request(task_data)
+        thread.start()
+    else:
+        process_chat_model_request(task_data)
 
 def process_chat_model_response(task_data: dict):
     agent_name = task_data["agent_name"]
@@ -228,20 +241,7 @@ def process_output_action(task_data: dict):
 
     if output_action_config:
         python_code_module = output_action_config["python_code_module"]
-
-        # Convert file path to module path
-        # Example: "src/chat_models/chat_model_openai.py" -> "chat_models.chat_model_openai"
-        if python_code_module.endswith(".py"):
-            python_code_module = python_code_module[:-3]  # Remove .py extension
-        module_path = python_code_module.replace("/", ".")      # Unix-style path to dot notation
-        module_path = module_path.replace("\\", ".")     # Windows-style path to dot notation
-        
-        # If it starts with src/, remove that prefix for proper importing
-        if module_path.startswith("src."):
-            module_path = module_path[4:]
-
-        # Import the module dynamically
-        module = importlib.import_module(module_path)
+        module = get_python_code_module(python_code_module)
 
         # Start the thread
         thread = threading.Thread(
