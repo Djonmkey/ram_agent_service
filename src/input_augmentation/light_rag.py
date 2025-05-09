@@ -1,4 +1,5 @@
 import sys 
+import asyncio
 import tiktoken
 
 from typing import Dict, Any, List
@@ -100,17 +101,35 @@ async def ask(question: str, mode, top_k, response_type) -> str:
     await rag.finalize_storages()
     return answer
 
-def augment_prompt(agent_name: str, prompt: str, meta_data: Dict[str, Any]):
+def augment_prompt(agent_name: str, prompt: str, meta_data: Dict[str, Any]) -> str:
+    """
+    Augment the prompt using RAG. This is a blocking call that will
+    wait for the async RAG query to complete before returning.
+    
+    Args:
+        agent_name: The name of the agent
+        prompt: The prompt to augment
+        meta_data: Additional metadata
+        
+    Returns:
+        The augmented prompt
+    """
     input_augmentation_config = get_input_augmentation_config(agent_name)
+
+    # Update configuration from agent settings
+    global WORKING_DIR, CHUNK_TOKENS, OVERLAP_TOKENS, CONTENT_PATH
+    WORKING_DIR = Path(input_augmentation_config.get("working_dir", "rag_storage"))
+    CHUNK_TOKENS = input_augmentation_config.get("chunk_tokens", 800)
+    OVERLAP_TOKENS = input_augmentation_config.get("overlap_tokens", 80)
+    content_path = input_augmentation_config.get("content_path", "rag_content.txt")
+    if content_path:
+        CONTENT_PATH = Path(content_path)
 
     mode = input_augmentation_config.get("mode", "mix")
     top_k = input_augmentation_config.get("top_k", 8)
     response_type = input_augmentation_config.get("response_type", "Multiple Paragraphs")
-    WORKING_DIR = Path(input_augmentation_config.get("working_dir", "rag_storage"))
-    CHUNK_TOKENS = input_augmentation_config.get("chunk_tokens", 800)
-    OVERLAP_TOKENS = input_augmentation_config.get("overlap_tokens", 80)
 
-    # Block before returning.
-    prompt = ask(prompt, mode, top_k, response_type)
-
-    return prompt
+    # Block until the async operation completes
+    result = asyncio.run(ask(prompt, mode, top_k, response_type))
+    
+    return result
