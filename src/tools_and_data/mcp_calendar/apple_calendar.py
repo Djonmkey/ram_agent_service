@@ -44,7 +44,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import dateutil.parser as dt_parser
-from calendar_integration import (
+from src.tools_and_data.mcp_calendar.calendar_integration import (
     build_vevent,
     create_and_push_event,
     push_event_to_icloud,
