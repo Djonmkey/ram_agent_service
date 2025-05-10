@@ -138,6 +138,7 @@ def push_event_to_icloud(
         timeout=30,
     )
     if resp.status_code not in (200, 201, 204):
+        print(f"CalDAV PUT failed {resp.status_code}: {resp.text[:200]}")
         raise RuntimeError(f"CalDAV PUT failed {resp.status_code}: {resp.text[:200]}")
     return uid
 
