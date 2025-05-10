@@ -243,12 +243,23 @@ def process_output_action(task_data: dict):
         python_code_module = output_action_config["python_code_module"]
         module = get_python_code_module(python_code_module)
 
-        # Start the thread
-        thread = threading.Thread(
-            target=module.process_output_action,
-            args=(agent_name, chat_model_response, meta_data),
-            daemon=True
-        )
+        DEFAULT_HANDLER_FUNCTION = "handler_function"
+        handler_function = output_action_config.get("handler_function", DEFAULT_HANDLER_FUNCTION)
+
+        if handler_function == DEFAULT_HANDLER_FUNCTION:
+            # Start the thread on the default handler
+            thread = threading.Thread(
+                target=module.process_output_action,
+                args=(agent_name, chat_model_response, meta_data),
+                daemon=True
+            )
+        else:
+            # Start the thread on the named handler
+            thread = threading.Thread(
+                target=module.handler_function,
+                args=(agent_name, chat_model_response, meta_data),
+                daemon=True
+            )
 
         thread.start() 
 

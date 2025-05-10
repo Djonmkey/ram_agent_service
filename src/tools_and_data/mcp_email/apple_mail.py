@@ -5,18 +5,18 @@ calendar_concierge_commands.py
 MCP command implementations for the **Calendar Concierge** agent.
 
 Each function name matches the MCP command verb and follows the
-standard signature used across David McKee’s RAM Agent Service::
+standard signature used across David McKee's RAM Agent Service::
 
     def <command>(command_parameters: Dict[str, Any],
                   internal_params: Dict[str, Any]) -> str:
 
-* ``command_parameters`` – the JSON payload supplied by the caller
+* ``command_parameters`` - the JSON payload supplied by the caller
   (usually another agent). It must match the schema defined in the
   Calendar Concierge system prompt.
-* ``internal_params`` – runtime context provided by the agent framework
+* ``internal_params`` - runtime context provided by the agent framework
   (e.g. auth tokens, export directory paths).
 
-All functions return **JSON‐encoded strings** so upstream agents can
+All functions return **JSON-encoded strings** so upstream agents can
 forward the raw payload directly to Discord or other transports.
 
 The module relies on :pymod:`calendar_integration` for CalDAV pushes
