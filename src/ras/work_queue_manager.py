@@ -36,7 +36,6 @@ QUEUE_NAME_CHAT_MODEL_REQUEST = "ChatModelRequest"
 QUEUE_NAME_CHAT_MODEL_RESPONSE = "ChatModelResponse"
 QUEUE_NAME_INPUT_TRIGGER = "InputTrigger"
 QUEUE_NAME_OUTPUT_ACTION = "OutputAction"
-QUEUE_NAME_TOOLS_AND_DATA = "ToolsAndData"
 
 def enqueue_chat_model_request(agent_name: str, prompt: str) -> None:
     """
@@ -243,28 +242,14 @@ def process_output_action(task_data: dict):
         python_code_module = output_action_config["python_code_module"]
         module = get_python_code_module(python_code_module)
 
-        DEFAULT_HANDLER_FUNCTION = "handler_function"
-        handler_function = output_action_config.get("handler_function", DEFAULT_HANDLER_FUNCTION)
-
-        if handler_function == DEFAULT_HANDLER_FUNCTION:
-            # Start the thread on the default handler
-            thread = threading.Thread(
-                target=module.process_output_action,
-                args=(agent_name, chat_model_response, meta_data),
-                daemon=True
-            )
-        else:
-            # Start the thread on the named handler
-            thread = threading.Thread(
-                target=module.handler_function,
-                args=(agent_name, chat_model_response, meta_data),
-                daemon=True
-            )
-
+        # Start the thread on the default handler
+        thread = threading.Thread(
+            target=module.process_output_action,
+            args=(agent_name, chat_model_response, meta_data),
+            daemon=True
+        )
+        
         thread.start() 
-
-def process_tools_and_data(task_data: dict):
-    pass 
 
 
 def _load_and_execute_module(queue_name: str, task_data: dict) -> None:
@@ -287,9 +272,6 @@ def _load_and_execute_module(queue_name: str, task_data: dict) -> None:
 
         if queue_name == QUEUE_NAME_OUTPUT_ACTION:  
            process_output_action(task_data)
-
-        if queue_name == QUEUE_NAME_TOOLS_AND_DATA:
-           process_tools_and_data(task_data)
 
     except Exception as e:
         print(f"[ERROR] Failed to process {queue_name}.: {e}")
@@ -323,4 +305,3 @@ def start_all_queue_workers() -> None:
     _start_queue_worker(QUEUE_NAME_CHAT_MODEL_RESPONSE, chat_model_response_queue)
     _start_queue_worker(QUEUE_NAME_INPUT_TRIGGER, input_trigger_queue)
     _start_queue_worker(QUEUE_NAME_OUTPUT_ACTION, output_action_queue)
-    _start_queue_worker(QUEUE_NAME_TOOLS_AND_DATA, tools_and_data_queue)
