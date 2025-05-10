@@ -9,6 +9,11 @@
             "name":"Mercurius",
             "description":"Mercurius is your AI-driven Job Offer Agent. It monitors your inbox for job opportunities, intelligently evaluates each message, and drafts personalized responses aligned with your preferences and professional goals. Each draft includes your most recent resume as an attachment, ensuring a complete and timely reply. You’re only notified when a response is ready — saving you time while staying responsive to every opportunity.",
             "agent_config_file":"config/agents/gmail_job_offer_responder/mercurius_config.json"
+        },
+        {
+            "name":"calendar_concierge_discord",
+            "description":"Calendar Interaction Agent",
+            "agent_config_file":"config/agents/calendar_concierge_discord/calendar_concierge_discord_config.json"
         }
     ]
 }
