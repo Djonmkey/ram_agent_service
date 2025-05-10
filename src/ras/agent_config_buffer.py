@@ -142,6 +142,16 @@ def set_tools_and_data_mcp_commands_secrets(agent_name: str, tools_and_data_mcp_
     global_tools_and_data_mcp_commands_secrets[agent_name] = json_string
 
 
+def get_tools_and_data_mcp_commands_secrets_by_module(agent_name: str,  python_code_module) -> Dict[str, Any]:
+    tools_and_data_mcp_commands_secrets = get_tools_and_data_mcp_commands_secrets(agent_name)
+
+    # in tools_and_data_mcp_commands_secrets there may be a 'common' element, which should aways be returned.
+
+    # In addition, there is a 'secrets' array element where the python_code_module (filename only e.g. 'apple_calendar.py') input variable is matched to the python_code_module (full relative path e.g. 'src/tools_and_data/mcp_calendar/apple_calendar.py') element in the array. All elements within the 'internal_params' element should be combined with the 'common' elements in the return.  
+
+    
+
+
 def get_tools_and_data_mcp_commands_secrets(agent_name: str) -> Dict[str, Any]:
     """
     Retrieve and parse MCP commands secrets

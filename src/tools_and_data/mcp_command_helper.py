@@ -153,6 +153,8 @@ def run_mcp_command(agent_name: str, command_text: str, model_response: str) -> 
         if model_parameters:
             matched_cmd["command_parameters"]["model_parameters"] = model_parameters
 
+        matched_cmd["command_parameters"]["agent_name"] = agent_name
+        
         if hasattr(cmd_mod, handler_name):
             handler = getattr(cmd_mod, handler_name)
             logger.info(f"Running MCP Command: {module_path}.{handler_name}")

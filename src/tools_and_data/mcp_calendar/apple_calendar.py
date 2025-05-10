@@ -51,6 +51,8 @@ from src.tools_and_data.mcp_calendar.calendar_integration import (
     write_ics_file,
 )
 
+from ras.agent_config_buffer import get_tools_and_data_mcp_commands_secrets_by_module
+
 # ---------------------------------------------------------------------
 # Constants & helpers
 # ---------------------------------------------------------------------
@@ -159,11 +161,21 @@ def create_event(command_parameters: Dict[str, Any], internal_params: Dict[str, 
             uid=uid,
         )
 
+        agent_name = command_parameters["agent_name"]
+        tools_and_data_mcp_commands_secrets = get_tools_and_data_mcp_commands_secrets_by_module(agent_name, Path(__file__).name)
+
+        calendar_url = tools_and_data_mcp_commands_secrets["ICLOUD_CALDAV_URL"]
+        username = tools_and_data_mcp_commands_secrets["ICLOUD_USER"]
+        app_password = tools_and_data_mcp_commands_secrets["ICLOUD_APP_PASSWORD"]
+
         cal_uid, ics_path = create_and_push_event(
             summary=data["summary"],
             description=data.get("description", ""),
             dt_start=dt_start,
             duration=duration_td,
+            calendar_url=calendar_url,
+            username=username,
+            app_password=app_password
         )
 
         data["calendar_uid"] = cal_uid
