@@ -39,11 +39,14 @@ from __future__ import annotations
 import json
 import os
 import uuid
+import dateutil
+
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
 
-import dateutil.parser as dt_parser
+import dateutil.parser
+
 from src.tools_and_data.mcp_calendar.calendar_integration import (
     build_vevent,
     create_and_push_event,
@@ -99,12 +102,35 @@ def _save_event(event: Dict[str, Any]) -> None:
     )
 
 
-def _parse_iso(dt_str: str) -> datetime:
-    return dt_parser.isoparse(dt_str)
+def _parse_iso(dt_str: str, default_date_time: datetime = None) -> datetime:
+    """
+    Parse a date string into a datetime object using a variety of common date formats.
+
+    This function is resilient to various date string formats including:
+    - ISO 8601: '2025-05-10T15:30:00-04:00'
+    - Date only: '2025-05-10'
+    - Human-readable formats: 'May 10, 2025', '10 May 2025'
+    - Slashed formats: '05/10/2025' (MM/DD/YYYY or DD/MM/YYYY depending on locale)
+
+    :param date_text: A date string to parse.
+    :param fallback: An ISO-formatted date string to use as fallback.
+    :return: A timezone-aware datetime object.
+    """
+    try:
+        return dateutil.parser.parse(dt_str)
+    except (ValueError, TypeError):
+        pass
+
+    try:
+        return dateutil.parser.isoparse(dt_str)
+    except (ValueError, TypeError):
+        pass
+
+    return default_date_time 
 
 
 def _within_window(event: Dict[str, Any], win_from: datetime, win_to: datetime) -> bool:
-    start = _parse_iso(event["dt_start"]).astimezone(timezone.utc)
+    start = _parse_iso(event["dt_start"], None).astimezone(timezone.utc)
     return win_from <= start <= win_to
 
 
@@ -197,7 +223,7 @@ def get_event(command_parameters: Dict[str, Any], internal_params: Dict[str, Any
     /get_event – return the full event object for *uid*.
     """
     try:
-        uid = command_parameters["uid"]
+        uid = command_parameters["model_parameters"] # only returns the uid
         event = _load_event(uid)
         return json.dumps({"status": "ok", "data": event})
     except FileNotFoundError:
@@ -205,17 +231,20 @@ def get_event(command_parameters: Dict[str, Any], internal_params: Dict[str, Any
             {"status": "error", "error": {"code": "not_found", "message": "uid not found"}}
         )
 
-
 def list_events(command_parameters: Dict[str, Any], internal_params: Dict[str, Any]) -> str:
     """
     /list_events – list events in a time window (defaults to current week).
     """
     try:
+        from_to = command_parameters["model_parameters"].strip()
+        from_to_parts = from_to.split(" ")
+        from_date_text = from_to_parts[0]
+        to_date_text = from_to_parts[1]
+
         now = datetime.now(TZ_DEFAULT)
-        win_from = _parse_iso(command_parameters.get("from", now.isoformat()))
+        win_from = _parse_iso(from_date_text, now)
         win_to = _parse_iso(
-            command_parameters.get("to", (now + timedelta(days=7)).isoformat())
-        )
+            to_date_text, (now + timedelta(days=7)))
 
         events = []
         for file in STORE_DIR.glob("*.json"):
