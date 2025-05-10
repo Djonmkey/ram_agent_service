@@ -151,7 +151,7 @@ def run_mcp_command(agent_name: str, command_text: str, model_response: str) -> 
         model_parameters = extract_model_parameters(command_text, model_response)
 
         if model_parameters:
-            matched_cmd["command_parameters"].append({"model_parameters": model_parameters})
+            matched_cmd["command_parameters"]["model_parameters"] = model_parameters
 
         if hasattr(cmd_mod, handler_name):
             handler = getattr(cmd_mod, handler_name)

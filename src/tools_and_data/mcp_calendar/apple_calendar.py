@@ -120,6 +120,18 @@ def create_event(command_parameters: Dict[str, Any], internal_params: Dict[str, 
         data.setdefault("timezone", "America/New_York")
         uid = data["uid"]
 
+        # Extract the model parameters
+        model_parameters = command_parameters["model_parameters"]
+
+        # Delete the model parameters from data 
+        del data["model_parameters"]
+
+        # Load the model paramers as json
+        model_data = json.loads(model_parameters)
+
+        # Copy the values to data.
+        data.update(model_data)
+
         if "dt_start" not in data or ("duration" not in data and "dt_end" not in data):
             raise ValueError("dt_start and duration|dt_end required.")
 
