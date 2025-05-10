@@ -142,15 +142,42 @@ def set_tools_and_data_mcp_commands_secrets(agent_name: str, tools_and_data_mcp_
     global_tools_and_data_mcp_commands_secrets[agent_name] = json_string
 
 
-def get_tools_and_data_mcp_commands_secrets_by_module(agent_name: str,  python_code_module) -> Dict[str, Any]:
-    tools_and_data_mcp_commands_secrets = get_tools_and_data_mcp_commands_secrets(agent_name)
-
-    # in tools_and_data_mcp_commands_secrets there may be a 'common' element, which should aways be returned.
-
-    # In addition, there is a 'secrets' array element where the python_code_module (filename only e.g. 'apple_calendar.py') input variable is matched to the python_code_module (full relative path e.g. 'src/tools_and_data/mcp_calendar/apple_calendar.py') element in the array. All elements within the 'internal_params' element should be combined with the 'common' elements in the return.  
-
+def get_tools_and_data_mcp_commands_secrets_by_module(agent_name: str, python_code_module: str) -> Dict[str, Any]:
+    """
+    Retrieve and parse MCP commands secrets specific to a Python module.
     
-
+    This function extracts the 'common' secrets and combines them with module-specific 'internal_params'.
+    
+    Args:
+        agent_name: Name of the agent
+        python_code_module: Python module filename (e.g., 'apple_calendar.py')
+        
+    Returns:
+        Dictionary containing combined common and module-specific secrets
+    """
+    tools_and_data_mcp_commands_secrets = get_tools_and_data_mcp_commands_secrets(agent_name)
+    result = {}
+    
+    # Always include common elements if they exist
+    if 'common' in tools_and_data_mcp_commands_secrets:
+        result.update(tools_and_data_mcp_commands_secrets['common'])
+    
+    # Look for module-specific secrets
+    if 'secrets' in tools_and_data_mcp_commands_secrets:
+        # Extract filename from path if full path is provided
+        module_filename = os.path.basename(python_code_module)
+        
+        for secret in tools_and_data_mcp_commands_secrets['secrets']:
+            # Extract filename from the module path in the secrets configuration
+            secret_module = os.path.basename(secret.get('python_code_module', ''))
+            
+            # Check if either the full path or just the filename matches
+            if secret.get('python_code_module') == python_code_module or secret_module == module_filename:
+                if 'internal_params' in secret:
+                    result.update(secret['internal_params'])
+                break
+    
+    return result
 
 def get_tools_and_data_mcp_commands_secrets(agent_name: str) -> Dict[str, Any]:
     """
