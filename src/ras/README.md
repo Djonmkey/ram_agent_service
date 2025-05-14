@@ -4,9 +4,9 @@ This command initializes the RAM Agent Service, loads agent configurations from 
 
 ```bash
 # Make sure your Python virtual environment is activated
-source venv/bin/activate  # On macOS/Linux
+source .venv/bin/activate  # On macOS/Linux
 # or
-venv\Scripts\activate  # On Windows
+.venv\Scripts\activate  # On Windows
 
 # Run the main Python script from the project root
 python src/ras/main.py
