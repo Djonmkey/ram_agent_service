@@ -180,3 +180,6 @@ src/tools_and_data/mcp_timely/cache/list_projects.json
 src/tools_and_data/mcp_timely/cache/list_tasks.json
 logs/RawChat/*
 logs/*
+src/tools_and_data/mcp-file-git-operations/package-lock.json
+src/tools_and_data/mcp-file-git-operations/package.json
+src/tools_and_data/mcp-file-git-operations/node_modules/*
