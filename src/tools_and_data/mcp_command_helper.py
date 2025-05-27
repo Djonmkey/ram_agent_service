@@ -95,11 +95,13 @@ def contains_mcp_command(agent_name: str, message_text: str) -> bool:
         logger.error(f"Error during command checking: {e}", exc_info=True)
         return False
     
-def extract_model_parameters(command_text, model_response):
-    command_only = extract_command(command_text).strip()
+def extract_model_parameters(agent_name, command_text, model_response):
+    command_only = extract_command(agent_name, command_text).strip()
 
     if model_response.startswith(command_only):
         return model_response[len(command_only):].strip()
+    elif command_only in model_response:
+        return model_response.split(command_only, 1)[1].strip()
 
     return None
 
@@ -167,7 +169,7 @@ def run_mcp_command(agent_name: str, command_text: str, model_response: str) -> 
         spec.loader.exec_module(cmd_mod)
 
         # extract parameters from the model response
-        model_parameters = extract_model_parameters(command_text, model_response)
+        model_parameters = extract_model_parameters(agent_name, command_text, model_response)
 
         if model_parameters:
             matched_cmd["command_parameters"]["model_parameters"] = model_parameters

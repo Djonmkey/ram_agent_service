@@ -1,14 +1,25 @@
 # mcp_fileio/write_file.py
+import os
 
 from typing import Any, Dict
 
 def execute_command(command_parameters: Dict[str, Any], internal_params: Dict[str, Any]) -> str:
-    root_path = internal_params.get("root_path")
-    filename = command_parameters.get("filename")
-    contents = command_parameters.get("contents", "")
 
-    file_path_name = f"{root_path}/{filename}"
+    root_path = command_parameters.get("file_path")
     
+    # Assume format <file_path> """<problem_statement>""""
+    model_parameters = command_parameters["model_parameters"]
+
+    params = model_parameters.split('"""')
+
+    filename = params[0]
+    contents = params[1]
+    
+    filename = filename.replace("'", "").strip()
+    contents = contents.strip()
+
+    file_path_name = os.path.join(root_path, filename)
+
     with open(file_path_name, "w", encoding="utf-8") as file:
         file.write(contents)
     
