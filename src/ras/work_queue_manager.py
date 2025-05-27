@@ -203,7 +203,7 @@ def process_chat_model_response(task_data: dict):
     meta_data = task_data.get("meta_data", {})
 
     if contains_mcp_command(agent_name, response):
-        immediate_response = escape_system_text_with_command_escape_text(response)
+        immediate_response = escape_system_text_with_command_escape_text(agent_name, response)
 
         # Chat back that we are still processing
         enqueue_output_action(agent_name, immediate_response, meta_data)
