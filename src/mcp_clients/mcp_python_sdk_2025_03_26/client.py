@@ -6,8 +6,17 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from dotenv import load_dotenv
+from pathlib import Path
+
+SRC_DIR = Path(__file__).resolve().parent.parent
+
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 load_dotenv()  # load environment variables from .env
+
+from ras.agent_config_buffer import get_tools_and_data_mcp_commands_config
+
 
 class MCPClient:
     def __init__(self):
@@ -15,12 +24,14 @@ class MCPClient:
         self.session: Optional[ClientSession] = None
         self.exit_stack = AsyncExitStack()
 
-    async def connect_to_server(self, server_script_path: str):
+    async def connect_to_server(self, agent_name: str):
         """Connect to an MCP server
         
         Args:
             server_script_path: Path to the server script (.py or .js)
         """
+        tools_and_data_mcp_commands_config = get_tools_and_data_mcp_commands_config(agent_name)
+
         is_python = server_script_path.endswith('.py')
         is_js = server_script_path.endswith('.js')
         if not (is_python or is_js):
@@ -130,7 +141,7 @@ class MCPClient:
 
 async def main():
     if len(sys.argv) < 2:
-        print("Usage: python client.py <path_to_server_script>")
+        print("Usage: client.py <path_to_server_script>")
         sys.exit(1)
         
     client = MCPClient()
