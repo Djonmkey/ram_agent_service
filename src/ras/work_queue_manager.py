@@ -286,7 +286,10 @@ def _load_and_execute_module(queue_name: str, task_data: dict) -> None:
     """
     try:
         if queue_name == QUEUE_NAME_CHAT_MODEL_REQUEST:
-           process_chat_model_request(task_data)
+            def chat_model_callback(agent_name: str, response: str, meta_data: dict):
+                enqueue_chat_model_response(agent_name, response, meta_data)
+
+            process_chat_model_request(task_data, callback=chat_model_callback)
 
         if queue_name == QUEUE_NAME_CHAT_MODEL_RESPONSE:
            process_chat_model_response(task_data)

@@ -117,46 +117,46 @@ class MCPClient:
 
         # Initial Claude API call
         task_data = { "agent_name":agent_name, "prompt": query}
-
-        response = process_chat_model_request(task_data)
-
-        # Process response and handle tool calls
+        
+        final_text_future = asyncio.Future()
         tool_results = []
         final_text = []
 
-        for content in response.content:
-            if content.type == 'text':
-                final_text.append(content.text)
-            elif content.type == 'tool_use':
-                tool_name = content.name
-                tool_args = content.input
-                
-                # Execute tool call
-                result = await self.session.call_tool(tool_name, tool_args)
-                tool_results.append({"call": tool_name, "result": result})
-                final_text.append(f"[Calling tool {tool_name} with args {tool_args}]")
+        async def response_callback(response):
+            nonlocal final_text, tool_results
+            try:
+                for content in response.content:
+                    if content.type == 'text':
+                        final_text.append(content.text)
+                    elif content.type == 'tool_use':
+                        tool_name = content.name
+                        tool_args = content.input
+                        
+                        # Execute tool call
+                        result = await self.session.call_tool(tool_name, tool_args)
+                        tool_results.append({"call": tool_name, "result": result})
+                        final_text.append(f"[Calling tool {tool_name} with args {tool_args}]")
 
-                # Continue conversation with tool results
-                if hasattr(content, 'text') and content.text:
-                    messages.append({
-                      "role": "assistant",
-                      "content": content.text
-                    })
-                messages.append({
-                    "role": "user", 
-                    "content": result.content
-                })
+                        # Continue conversation with tool results
+                        if hasattr(content, 'text') and content.text:
+                            messages.append({
+                              "role": "assistant",
+                              "content": content.text
+                            })
+                        messages.append({
+                            "role": "user", 
+                            "content": result.content
+                        })
 
-                # Get next response from Claude
-                response = self.anthropic.messages.create(
-                    model="claude-3-5-sonnet-20241022",
-                    max_tokens=1000,
-                    messages=messages,
-                )
+                        # multi-turn conversations
+                        process_chat_model_request(task_data, callback=response_callback)
+                final_text_future.set_result("\n".join(final_text))
+            except Exception as e:
+                final_text_future.set_exception(e)
 
-                final_text.append(response.content[0].text)
+        process_chat_model_request(task_data, callback=response_callback)
 
-        return "\n".join(final_text)
+        return await final_text_future
 
     async def chat_loop(self):
         """Run an interactive chat loop"""
