@@ -1,27 +1,143 @@
+#!/usr/bin/env python3
+
+import asyncio
+import sys
 import os
-from typing import Dict, Any
+from typing import Any, Sequence
+from mcp.server.models import InitializeResult
+from mcp.server import NotificationOptions, Server
+from mcp.server.stdio import stdio_server
+from mcp.types import Resource, Tool, TextContent, ImageContent, EmbeddedResource
+import mcp.types as types
 
-def execute_command(command_parameters: Dict[str, Any], internal_params: Dict[str, Any]) -> str:
-    root_path = command_parameters.get("file_path")
+
+server = Server("write-file-server")
+
+
+@server.list_tools()
+async def handle_list_tools() -> list[Tool]:
+    """
+    List available tools.
+    Each tool specifies its arguments using JSON Schema validation.
+    """
+    return [
+        Tool(
+            name="write_file",
+            description="Write content to a file at the specified path",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "The file path to write to (can be absolute or relative)"
+                    },
+                    "content": {
+                        "type": "string", 
+                        "description": "The content to write to the file"
+                    },
+                    "create_directories": {
+                        "type": "boolean",
+                        "description": "Whether to create parent directories if they don't exist",
+                        "default": True
+                    }
+                },
+                "required": ["file_path", "content"]
+            }
+        )
+    ]
+
+
+@server.call_tool()
+async def handle_call_tool(name: str, arguments: dict | None) -> list[TextContent | ImageContent | EmbeddedResource]:
+    """
+    Handle tool execution requests.
+    """
+    if name == "write_file":
+        file_path = arguments.get("file_path")
+        content = arguments.get("content")
+        create_directories = arguments.get("create_directories", True)
+        
+        if not file_path:
+            return [TextContent(type="text", text="Error: file_path is required")]
+        
+        if content is None:
+            return [TextContent(type="text", text="Error: content is required")]
+        
+        try:
+            # Convert to absolute path if relative
+            if not os.path.isabs(file_path):
+                file_path = os.path.abspath(file_path)
+            
+            # Create parent directories if requested
+            if create_directories:
+                directory = os.path.dirname(file_path)
+                if directory:
+                    os.makedirs(directory, exist_ok=True)
+            
+            # Write the file
+            with open(file_path, "w", encoding="utf-8") as file:
+                file.write(content)
+            
+            return [TextContent(type="text", text=f"Successfully wrote to file: {file_path}")]
+            
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error writing file: {str(e)}")]
     
-    # Assume format <file_path> """<problem_statement>""""
-    model_parameters = command_parameters["model_parameters"]
+    else:
+        return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
-    params = model_parameters.split('"""')
 
-    filename = params[0]
-    contents = params[1]
-    
-    filename = filename.replace("'", "").strip()
-    contents = contents.strip()
+async def main():
+    # Run the server using stdin/stdout streams
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(
+            read_stream,
+            write_stream,
+            InitializeResult(
+                protocolVersion="2024-11-05",
+                capabilities=server.get_capabilities(
+                    notification_options=NotificationOptions(),
+                    experimental_capabilities={},
+                ),
+            ),
+        )
 
-    file_path_name = os.path.join(root_path, filename)
-    
-    # Ensure the directory exists
-    directory = os.path.dirname(file_path_name)
-    os.makedirs(directory, exist_ok=True)
 
-    with open(file_path_name, "w", encoding="utf-8") as file:
-        file.write(contents)
-    
-    return f"Successfully wrote to file: {file_path_name}"
+# Legacy support for the old execute_command interface
+def execute_command(command_parameters: dict[str, Any], internal_params: dict[str, Any]) -> str:
+    """Legacy execute_command interface for backward compatibility"""
+    root_path = command_parameters.get("file_path", "")
+    model_parameters = command_parameters.get("model_parameters", "")
+
+    # Parse the old format: <file_path> """<content>"""
+    try:
+        params = model_parameters.split('"""')
+        if len(params) >= 2:
+            filename = params[0].replace("'", "").strip()
+            contents = params[1].strip()
+        else:
+            # Fallback if the format is different
+            filename = model_parameters
+            contents = command_parameters.get("content", "")
+        
+        if root_path:
+            file_path = os.path.join(root_path, filename)
+        else:
+            file_path = filename
+        
+        # Ensure the directory exists
+        directory = os.path.dirname(file_path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+
+        with open(file_path, "w", encoding="utf-8") as file:
+            file.write(contents)
+        
+        return f"Successfully wrote to file: {file_path}"
+        
+    except Exception as e:
+        return f"Error writing file: {str(e)}"
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
