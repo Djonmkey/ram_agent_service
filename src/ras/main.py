@@ -96,7 +96,7 @@ if __name__ == "__main__":
         print(f"⚠️ Warning: Could not ensure base log directory {abs_log_directory}: {e}")
         # Continue execution, but logging might fail later
 
-    async def load_and_connect_clients():
+    async def load_and_connect_mcp_clients():
         """Load MCP clients and establish their server connections"""
         mcp_client_manager = MCPClientManager()
         
@@ -151,7 +151,7 @@ if __name__ == "__main__":
         return mcp_client_manager
     
     # Run the async client loading
-    mcp_client_manager = asyncio.run(load_and_connect_clients())
+    mcp_client_manager = asyncio.run(load_and_connect_mcp_clients())
 
     # Start the Queue Manager
     start_all_queue_workers(mcp_client_manager)
