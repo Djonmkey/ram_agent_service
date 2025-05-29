@@ -229,7 +229,15 @@ def process_input_trigger(task_data: dict, mcp_client_manager=None):
         # Here I want to retreive the appropraite mcp_client by agent_name
         mcp_client = mcp_client_manager.get_client(agent_name)
         if mcp_client:
-            mcp_client.process_query(agent_name, prompt, meta_data)
+            # Run the async process_query method in a thread
+            def run_async_process_query():
+                try:
+                    asyncio.run(mcp_client.process_query(agent_name, prompt, meta_data))
+                except Exception as e:
+                    print(f"Error in MCP client process_query: {e}")
+            
+            thread = threading.Thread(target=run_async_process_query, daemon=True)
+            thread.start()
         else:
             print(f"No MCPClient found for agent: {agent_name}")
     
@@ -428,7 +436,7 @@ class WorkQueueManager:
                 # Load MCPClient class and execute
                 mcp_client = self.mcp_client_manager.get_client(agent_name)
                 if mcp_client:
-                    mcp_client.process_query(prompt)
+                    await mcp_client.process_query(agent_name, prompt, {})
                 else:
                     print(f"No MCPClient found for agent: {agent_name}")
             else:

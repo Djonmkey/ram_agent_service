@@ -108,7 +108,12 @@ class MCPClient:
             }
         ]
 
-        response = await self.session.list_tools()
+        if not self.sessions:
+            print("Error: No MCP sessions available")
+            return "Error: No MCP server connections available"
+        
+        # Use the first session for tool listing (could be enhanced to use all sessions)
+        response = await self.sessions[0].list_tools()
         available_tools = [{ 
             "name": tool.name,
             "description": tool.description,
@@ -132,8 +137,8 @@ class MCPClient:
                         tool_name = content.name
                         tool_args = content.input
                         
-                        # Execute tool call
-                        result = await self.session.call_tool(tool_name, tool_args)
+                        # Execute tool call (using first session - could be enhanced to search all sessions)
+                        result = await self.sessions[0].call_tool(tool_name, tool_args)
                         tool_results.append({"call": tool_name, "result": result})
                         final_text.append(f"[Calling tool {tool_name} with args {tool_args}]")
 
