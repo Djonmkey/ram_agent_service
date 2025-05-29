@@ -99,7 +99,7 @@ class MCPClient:
         else:
             print("No servers were successfully connected.")
 
-    async def process_query(self, agent_name, query: str) -> str:
+    async def process_query(self, agent_name, query: str, meta_data: Optional[Dict[str, Any]] = None) -> str:
         """Process a query using Chat Model and available tools"""
         messages = [
             {

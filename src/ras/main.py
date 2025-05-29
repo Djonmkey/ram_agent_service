@@ -5,9 +5,10 @@ import sys
 import json
 from datetime import datetime
 import threading
-from pathlib import Path 
+from pathlib import Path
 import time
 import argparse
+from src.ras.mcp_client_manager import MCPClientManager
 
 # --- BEGIN: Add src directory to sys.path ---
 # Determine the absolute path to the 'src' directory
@@ -25,8 +26,8 @@ if str(SRC_DIR) not in sys.path:
 # Now imports relative to src should work everywhere
 from ras.work_queue_manager import start_all_queue_workers
 from ras.agent_config_buffer import load_agent_manifest, get_agent_name_list
-from ras.start_tools_and_data import on_startup_dispatcher # Use explicit relative or absolute
-from ras.start_input_triggers import initialize_input_triggers # Use explicit relative or absolute
+from ras.start_tools_and_data import on_startup_dispatcher  # Use explicit relative or absolute
+from ras.start_input_triggers import initialize_input_triggers  # Use explicit relative or absolute
 
 # Global variables
 # Keep log_directory definition here as it's based on main.py's location
@@ -38,8 +39,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the RAM Agent Service.")
     parser.add_argument(
         'manifest_file',
-        nargs='?', # Makes the argument optional
-        default='../../config/agent_manifest.json', # Default value if not provided
+        nargs='?',  # Makes the argument optional
+        default='../../config/agent_manifest.json',  # Default value if not provided
         help='Path to the agent manifest JSON file (relative to main.py location).'
     )
     args = parser.parse_args()
@@ -82,7 +83,7 @@ if __name__ == "__main__":
         print("MCP startup dispatcher finished.")
     except Exception as e:
         print(f"❌ Error during MCP startup: {e}")
-        sys.exit(1) # Exit if startup fails
+        sys.exit(1)  # Exit if startup fails
 
     # --- Initialize and start event listeners using the new function ---
     # Calculate absolute log path to pass
@@ -95,8 +96,39 @@ if __name__ == "__main__":
         print(f"⚠️ Warning: Could not ensure base log directory {abs_log_directory}: {e}")
         # Continue execution, but logging might fail later
 
+    mcp_client_manager = MCPClientManager()
+
+    # Assuming you have a way to get the agent configurations
+    agent_configs = get_agent_name_list()  # Replace with your actual function
+
+    for agent_name in agent_configs:
+        # Assuming agent_configs is a list of agent names
+        agent_config = load_agent_manifest(str(manifest_path_absolute)).get(agent_name)
+
+        if agent_config:
+            mcp_client_python_code_module = agent_config.get('mcp_client_python_code_module')
+
+            if mcp_client_python_code_module:
+                # Dynamically import the client module
+                module_path, class_name = mcp_client_python_code_module.rsplit('.', 1)
+                try:
+                    module = __import__(module_path, fromlist=[class_name])
+                    client_class = getattr(module, class_name)
+
+                    # Check if the class has the required methods (duck typing)
+                    if hasattr(client_class, 'process_query') and callable(getattr(client_class, 'process_query')):
+                        # Create an instance of the MCPClient
+                        client = client_class()  # Pass any necessary arguments here
+
+                        # Add the client to the manager
+                        mcp_client_manager.add_client(agent_name, client)
+                    else:
+                        print(f"Error: Class {class_name} in module {module_path} does not have a 'process_query' method.")
+                except Exception as e:
+                    print(f"Error loading MCP client for agent {agent_name}: {e}")
+
     # Start the Queue Manager
-    start_all_queue_workers()
+    start_all_queue_workers(mcp_client_manager)
 
     # Call the function from start_input_triggers.py with the FILTERED manifest data
     listener_thread = None
@@ -128,18 +160,15 @@ if __name__ == "__main__":
         # (Currently, they run until completion or error - asyncio loop cancellation might be needed)
         if listener_thread:
             print("Waiting for listener thread to finish...")
-            listener_thread.join(timeout=5.0) # Wait a bit longer
+            listener_thread.join(timeout=5.0)  # Wait a bit longer
             if listener_thread.is_alive():
-                 print("Warning: Listener thread did not exit cleanly.")
+                print("Warning: Listener thread did not exit cleanly.")
 
         print("Shutdown complete.")
     except Exception as e:
-         print(f"\nAn unexpected error occurred in the main loop: {e}")
-         # Perform similar shutdown procedures on unexpected errors
-         sys.exit(1) # Exit with error status
+        print(f"\nAn unexpected error occurred in the main loop: {e}")
+        # Perform similar shutdown procedures on unexpected errors
+        sys.exit(1)
 
-    print("\nApplication finished.") # Add a final message
-    sys.exit(0) # Explicitly exit with success code
-
-    # --- UI Creation and mainloop Removed ---
-    # TODO: Start HTTP service for UI
+    print("\nApplication finished.")
+    sys.exit(0)

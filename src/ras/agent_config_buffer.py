@@ -438,6 +438,7 @@ def load_agent_manifest(manifest_path: str) -> None:
                 if "mcp_commands_config_file" in tools_and_data:
                     config_path = resolve_path(base_path, tools_and_data["mcp_commands_config_file"])
                     mcp_commands_config = load_json_file(str(config_path))
+                    mcp_commands_config["mcp_client_python_code_module"] = agent.get("mcp_client_python_code_module", "")
                     set_tools_and_data_mcp_commands_config(agent_name, mcp_commands_config)
                     logger.info(f"Loaded MCP commands config for {agent_name}")
 
