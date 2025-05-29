@@ -4,7 +4,7 @@ import asyncio
 import sys
 import os
 from typing import Any, Sequence
-from mcp.server.models import InitializeResult
+from mcp.types import InitializeResult, Implementation
 from mcp.server import NotificationOptions, Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Resource, Tool, TextContent, ImageContent, EmbeddedResource
@@ -98,6 +98,10 @@ async def main():
                 capabilities=server.get_capabilities(
                     notification_options=NotificationOptions(),
                     experimental_capabilities={},
+                ),
+                serverInfo=Implementation(
+                    name="write-file-server",
+                    version="1.0.0"
                 ),
             ),
         )
