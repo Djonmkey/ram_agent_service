@@ -17,7 +17,7 @@ if str(SRC_DIR) not in sys.path:
 load_dotenv()  # load environment variables from .env
 
 from ras.agent_config_buffer import get_tools_and_data_mcp_commands_config
-
+from ras.work_queue_manager import process_chat_model_request
 
 class MCPClient:
     def __init__(self):
@@ -99,7 +99,7 @@ class MCPClient:
         else:
             print("No servers were successfully connected.")
 
-    async def process_query(self, query: str) -> str:
+    async def process_query(self, agent_name, query: str) -> str:
         """Process a query using Chat Model and available tools"""
         messages = [
             {
@@ -116,12 +116,9 @@ class MCPClient:
         } for tool in response.tools]
 
         # Initial Claude API call
-        response = self.anthropic.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=1000,
-            messages=messages,
-            tools=available_tools
-        )
+        task_data = { "agent_name":agent_name, "prompt": query}
+
+        response = process_chat_model_request(task_data)
 
         # Process response and handle tool calls
         tool_results = []
