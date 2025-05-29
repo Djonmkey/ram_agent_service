@@ -216,13 +216,13 @@ def process_input_trigger(task_data: dict):
     mcp_client_python_code_module = tools_and_data_mcp_commands_config.get("mcp_client_python_code_module")
 
     if mcp_client_python_code_module:
-        # TODO: Load MCPClient class defined in  mcp_client_python_code_module and execute
-        # mcp_client = self.mcp_client_manager.get_client(agent_name)
-        # if mcp_client:
-        #     mcp_client.process_query(prompt)
-        # else:
-        #     print(f"No MCPClient found for agent: {agent_name}")
-        process_query(agent_name, prompt, meta_data)
+        # Here I want to retreive the appropraite mcp_client by agent_name
+        mcp_client = mcp_client_manager.get_client(agent_name)
+        if mcp_client:
+            mcp_client.process_query(agent_name, prompt, meta_data)
+        else:
+        print(f"No MCPClient found for agent: {agent_name}")
+    
     else:
         # Step 1: Execute Input Augmentation
         input_augmentation_config = get_input_augmentation_config(agent_name)
