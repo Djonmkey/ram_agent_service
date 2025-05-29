@@ -133,7 +133,7 @@ if __name__ == "__main__":
     # Call the function from start_input_triggers.py with the FILTERED manifest data
     listener_thread = None
     if get_agent_name_list():
-        listener_thread = initialize_input_triggers(abs_log_directory)
+        listener_thread = initialize_input_triggers(abs_log_directory, mcp_client_manager)
     else:
         print("Skipping input trigger initialization as there are no enabled agents.")
     # --- End of listener initialization ---
