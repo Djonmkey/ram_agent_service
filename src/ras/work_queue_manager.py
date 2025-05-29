@@ -14,6 +14,7 @@ import threading
 import queue
 import json
 import importlib
+import asyncio
 
 from typing import Callable, Dict, Any
 from pathlib import Path
@@ -206,7 +207,7 @@ def process_chat_model_request(task_data: dict, callback: Callable = None):
     thread.start()
 
 
-def process_input_trigger(task_data: dict):
+def process_input_trigger(task_data: dict, mcp_client_manager=None):
     agent_name = task_data["agent_name"]
     prompt = task_data["prompt"]
     meta_data = task_data.get("meta_data", {})
@@ -221,7 +222,7 @@ def process_input_trigger(task_data: dict):
         if mcp_client:
             mcp_client.process_query(agent_name, prompt, meta_data)
         else:
-        print(f"No MCPClient found for agent: {agent_name}")
+            print(f"No MCPClient found for agent: {agent_name}")
     
     else:
         # Step 1: Execute Input Augmentation
@@ -296,7 +297,7 @@ def process_output_action(task_data: dict):
         thread.start()
 
 
-def _load_and_execute_module(queue_name: str, task_data: dict) -> None:
+def _load_and_execute_module(queue_name: str, task_data: dict, mcp_client_manager) -> None:
     """
     Dynamically load a Python module and execute a function within it.
 
@@ -315,7 +316,7 @@ def _load_and_execute_module(queue_name: str, task_data: dict) -> None:
             process_chat_model_response(task_data)
 
         if queue_name == QUEUE_NAME_INPUT_TRIGGER:
-            process_input_trigger(task_data)
+            process_input_trigger(task_data, mcp_client_manager)
 
         if queue_name == QUEUE_NAME_OUTPUT_ACTION:
             process_output_action(task_data)
@@ -337,7 +338,7 @@ def _start_queue_worker(queue_name: str, task_queue: queue.Queue[str], mcp_clien
             try:
                 task_json = task_queue.get()
                 task = json.loads(task_json)
-                _load_and_execute_module(queue_name, task)
+                _load_and_execute_module(queue_name, task, mcp_client_manager)
             except Exception as e:
                 print(f"[ERROR] {queue_name} queue processing failed: {e}")
 
