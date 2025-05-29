@@ -23,7 +23,7 @@ SRC_DIR = Path(__file__).resolve().parent.parent.parent  # Go up three levels: d
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from ras.agent_config_buffer import get_chat_model_config, get_output_action_config, get_input_augmentation_config
+from ras.agent_config_buffer import get_chat_model_config, get_output_action_config, get_input_augmentation_config, get_tools_and_data_mcp_commands_config
 from tools_and_data.mcp_command_helper import contains_mcp_command, process_mcp_commands, escape_system_text_with_command_escape_text
 
 
@@ -458,17 +458,6 @@ class WorkQueueManager:
             if self.queue_manager_thread.is_alive():
                 print("Warning: Queue manager thread did not exit cleanly.")
         print("Shutdown complete.")
-
-
-def get_tools_and_data_mcp_commands_config(agent_name: str) -> Dict[str, Any]:
-    """
-    Get the tools and data MCP commands configuration for the given agent name.
-
-    :param agent_name: Name of the agent
-    :return: The tools and data MCP commands configuration
-    """
-    # TODO: Implement this function
-    return {}
 
 
 def start_all_queue_workers(mcp_client_manager) -> None:
