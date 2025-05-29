@@ -154,11 +154,7 @@ def get_python_code_module(python_code_module: str):
     return module
 
 
-def process_chat_model_input_augmentation(task_data):
-    agent_name = task_data["agent_name"]
-    prompt = task_data["prompt"]
-    meta_data = task_data.get("meta_data", {})
-
+def augment_input_prompt(agent_name, prompt, meta_data):
     # Imporant: We are already in a thread
     input_augmentation_config = get_input_augmentation_config(agent_name)
     python_code_module = input_augmentation_config["python_code_module"]
@@ -166,6 +162,13 @@ def process_chat_model_input_augmentation(task_data):
 
     # Step 1: Execute Input Augmentation
     prompt = module.augment_prompt(agent_name, prompt, meta_data)
+
+def process_chat_model_input_augmentation(task_data):
+    agent_name = task_data["agent_name"]
+    prompt = task_data["prompt"]
+    meta_data = task_data.get("meta_data", {})
+
+    prompt = augment_input_prompt(agent_name, prompt, meta_data)
 
     # Step 2: Execute Chat Model Request
     task_data["prompt"] = prompt
@@ -212,11 +215,17 @@ def process_input_trigger(task_data: dict, mcp_client_manager=None):
     prompt = task_data["prompt"]
     meta_data = task_data.get("meta_data", {})
 
+    # Grad Input Augmentation Config
+    input_augmentation_config = get_input_augmentation_config(agent_name)
+    
     # Step 1: Check for a specific MCP Client
     tools_and_data_mcp_commands_config = get_tools_and_data_mcp_commands_config(agent_name)
     mcp_client_python_code_module = tools_and_data_mcp_commands_config.get("mcp_client_python_code_module")
 
     if mcp_client_python_code_module:
+        if input_augmentation_config:
+            prompt = augment_input_prompt(agent_name, prompt, meta_data)
+        
         # Here I want to retreive the appropraite mcp_client by agent_name
         mcp_client = mcp_client_manager.get_client(agent_name)
         if mcp_client:
@@ -225,9 +234,6 @@ def process_input_trigger(task_data: dict, mcp_client_manager=None):
             print(f"No MCPClient found for agent: {agent_name}")
     
     else:
-        # Step 1: Execute Input Augmentation
-        input_augmentation_config = get_input_augmentation_config(agent_name)
-
         if input_augmentation_config:
             # Start the thread
             thread = threading.Thread(
