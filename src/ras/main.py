@@ -111,8 +111,20 @@ if __name__ == "__main__":
                 if mcp_client_python_code_module:
                     try:
                         CLASS_NAME = "MCPClient"
-                        module = __import__(mcp_client_python_code_module, fromlist=CLASS_NAME)
-                        client_class = getattr(module, "MCPClient")
+                        
+                        # Convert file path to module name
+                        # e.g., "src/mcp_clients/mcp_python_sdk_2025_03_26/client.py" -> "src.mcp_clients.mcp_python_sdk_2025_03_26.client"
+                        if mcp_client_python_code_module.endswith('.py'):
+                            module_name = mcp_client_python_code_module[:-3]  # Remove .py extension
+                        else:
+                            module_name = mcp_client_python_code_module
+                        
+                        # Replace path separators with dots
+                        module_name = module_name.replace('/', '.').replace('\\', '.')
+                        
+                        print(f"Loading MCP client module: {module_name} for agent: {agent_name}")
+                        module = __import__(module_name, fromlist=[CLASS_NAME])
+                        client_class = getattr(module, CLASS_NAME)
 
                         # Check if the class has the required methods (duck typing)
                         if hasattr(client_class, 'process_query') and callable(getattr(client_class, 'process_query')):
