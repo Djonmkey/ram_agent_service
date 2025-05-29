@@ -1,12 +1,13 @@
 import asyncio
-from typing import Optional
+import sys
+from typing import Optional, List, Dict, Any
 from contextlib import AsyncExitStack
+from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from dotenv import load_dotenv
-from pathlib import Path
 
 SRC_DIR = Path(__file__).resolve().parent.parent
 
@@ -21,39 +22,82 @@ from ras.agent_config_buffer import get_tools_and_data_mcp_commands_config
 class MCPClient:
     def __init__(self):
         # Initialize session and client objects
-        self.session: Optional[ClientSession] = None
+        self.sessions: List[ClientSession] = []
         self.exit_stack = AsyncExitStack()
+        self.server_modules: List[str] = []
 
     async def connect_to_server(self, agent_name: str):
-        """Connect to an MCP server
+        """Connect to MCP servers based on agent configuration
         
         Args:
-            server_script_path: Path to the server script (.py or .js)
+            agent_name: Name of the agent to load configuration for
         """
         tools_and_data_mcp_commands_config = get_tools_and_data_mcp_commands_config(agent_name)
-
-        is_python = server_script_path.endswith('.py')
-        is_js = server_script_path.endswith('.js')
-        if not (is_python or is_js):
-            raise ValueError("Server script must be a .py or .js file")
-            
-        command = "python" if is_python else "node"
-        server_params = StdioServerParameters(
-            command=command,
-            args=[server_script_path],
-            env=None
-        )
         
-        stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
-        self.stdio, self.write = stdio_transport
-        self.session = await self.exit_stack.enter_async_context(ClientSession(self.stdio, self.write))
+        if not tools_and_data_mcp_commands_config or 'mcp_commands' not in tools_and_data_mcp_commands_config:
+            print(f"No MCP commands configuration found for agent: {agent_name}")
+            return
         
-        await self.session.initialize()
+        # Get unique server modules from enabled commands
+        unique_modules = set()
+        for command in tools_and_data_mcp_commands_config['mcp_commands']:
+            if not command.get('enabled', True):
+                continue
+                
+            # Check for python_code_module or node_code_module
+            if 'python_code_module' in command:
+                unique_modules.add(('python', command['python_code_module']))
+            elif 'node_code_module' in command:
+                unique_modules.add(('node', command['node_code_module']))
         
-        # List available tools
-        response = await self.session.list_tools()
-        tools = response.tools
-        print("\nConnected to server with tools:", [tool.name for tool in tools])
+        if not unique_modules:
+            print(f"No enabled MCP server modules found for agent: {agent_name}")
+            return
+        
+        # Connect to each unique server module
+        all_tools = []
+        for module_type, module_path in unique_modules:
+            try:
+                # Resolve the full path if it's relative
+                if not Path(module_path).is_absolute():
+                    # Assume it's relative to the project root
+                    full_path = Path.cwd() / module_path
+                else:
+                    full_path = Path(module_path)
+                
+                if not full_path.exists():
+                    print(f"Warning: Server module not found: {full_path}")
+                    continue
+                
+                command = "python" if module_type == 'python' else "node"
+                server_params = StdioServerParameters(
+                    command=command,
+                    args=[str(full_path)],
+                    env=None
+                )
+                
+                stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
+                stdio, write = stdio_transport
+                session = await self.exit_stack.enter_async_context(ClientSession(stdio, write))
+                
+                await session.initialize()
+                self.sessions.append(session)
+                self.server_modules.append(str(full_path))
+                
+                # List available tools for this server
+                response = await session.list_tools()
+                tools = response.tools
+                tool_names = [tool.name for tool in tools]
+                all_tools.extend(tool_names)
+                print(f"\nConnected to {module_path} with tools: {tool_names}")
+                
+            except Exception as e:
+                print(f"Failed to connect to server {module_path}: {str(e)}")
+        
+        if self.sessions:
+            print(f"\nTotal tools available across all servers: {all_tools}")
+        else:
+            print("No servers were successfully connected.")
 
     async def process_query(self, query: str) -> str:
         """Process a query using Chat Model and available tools"""
@@ -141,7 +185,7 @@ class MCPClient:
 
 async def main():
     if len(sys.argv) < 2:
-        print("Usage: client.py <path_to_server_script>")
+        print("Usage: client.py <agent_name>")
         sys.exit(1)
         
     client = MCPClient()
