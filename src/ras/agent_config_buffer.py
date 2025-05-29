@@ -490,6 +490,8 @@ def load_agent_manifest(manifest_path: str) -> None:
                     logger.info(f"Loaded output action model secrets for {agent_name}")
         
         logger.info(f"Finished loading configuration for {enabled_count} enabled agent(s)")
+
+        return manifest
     
     except Exception as e:
         logger.error(f"Error loading agent manifest: {str(e)}")

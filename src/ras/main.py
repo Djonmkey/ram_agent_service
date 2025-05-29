@@ -99,33 +99,32 @@ if __name__ == "__main__":
     mcp_client_manager = MCPClientManager()
 
     # Assuming you have a way to get the agent configurations
-    agent_configs = get_agent_name_list()  # Replace with your actual function
+    enabled_agent_name_list = get_agent_name_list()  # Replace with your actual function
 
-    for agent_name in agent_configs:
-        # Assuming agent_configs is a list of agent names
-        agent_config = load_agent_manifest(str(manifest_path_absolute)).get(agent_name)
+    agent_manifest = load_agent_manifest(str(manifest_path_absolute))
 
-        if agent_config:
-            mcp_client_python_code_module = agent_config.get('mcp_client_python_code_module')
+    for agent_name in enabled_agent_name_list:
+        for agent_config in agent_manifest["agents"]:
+            if agent_config.get('name') == agent_name:
+                mcp_client_python_code_module = agent_config.get('mcp_client_python_code_module')
 
-            if mcp_client_python_code_module:
-                # Dynamically import the client module
-                module_path, class_name = mcp_client_python_code_module.rsplit('.', 1)
-                try:
-                    module = __import__(module_path, fromlist=[class_name])
-                    client_class = getattr(module, class_name)
+                if mcp_client_python_code_module:
+                    try:
+                        CLASS_NAME = "MCPClient"
+                        module = __import__(mcp_client_python_code_module, fromlist=CLASS_NAME)
+                        client_class = getattr(module, "MCPClient")
 
-                    # Check if the class has the required methods (duck typing)
-                    if hasattr(client_class, 'process_query') and callable(getattr(client_class, 'process_query')):
-                        # Create an instance of the MCPClient
-                        client = client_class()  # Pass any necessary arguments here
+                        # Check if the class has the required methods (duck typing)
+                        if hasattr(client_class, 'process_query') and callable(getattr(client_class, 'process_query')):
+                            # Create an instance of the MCPClient
+                            client = client_class()  # Pass any necessary arguments here
 
-                        # Add the client to the manager
-                        mcp_client_manager.add_client(agent_name, client)
-                    else:
-                        print(f"Error: Class {class_name} in module {module_path} does not have a 'process_query' method.")
-                except Exception as e:
-                    print(f"Error loading MCP client for agent {agent_name}: {e}")
+                            # Add the client to the manager
+                            mcp_client_manager.add_client(agent_name, client)
+                        else:
+                            print(f"Error: Class {CLASS_NAME} in module {mcp_client_python_code_module} does not have a 'process_query' method.")
+                    except Exception as e:
+                        print(f"Error loading MCP client for agent {agent_name}: {e}")
 
     # Start the Queue Manager
     start_all_queue_workers(mcp_client_manager)
