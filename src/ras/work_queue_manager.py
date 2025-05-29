@@ -61,14 +61,24 @@ def enqueue_chat_model_response(agent_name: str, response: str, meta_data: dict)
     :param contents: A JSON string describing the task
     """
     
-    contents = {}
-    contents["agent_name"] = agent_name
-    contents["response"] = response
-    contents["meta_data"] = meta_data
-    
-    json_string = json.dumps(contents)
+    # Check if there's a callback in meta_data and call it
+    callback = meta_data.get("callback")
+    if callback and callable(callback):
+        try:
+            callback(agent_name, response, meta_data)
+        except Exception as e:
+            print(f"Error calling callback: {e}")
+            # Remove callback from meta_data before enqueuing to avoid JSON serialization issues
+            meta_data = {k: v for k, v in meta_data.items() if k != "callback"}
+    else:
+        contents = {}
+        contents["agent_name"] = agent_name
+        contents["response"] = response
+        contents["meta_data"] = meta_data
+        
+        json_string = json.dumps(contents)
 
-    chat_model_response_queue.put(json_string)
+        chat_model_response_queue.put(json_string)
 
 
 def enqueue_input_trigger(agent_name: str, prompt: str, meta_data: Dict) -> None:
@@ -156,7 +166,7 @@ def process_chat_model_input_augmentation(task_data):
     process_chat_model_request(task_data)
 
 
-def process_chat_model_request(task_data: dict):
+def process_chat_model_request(task_data: dict, callback: Callable = None):
     agent_name = task_data["agent_name"]
     prompt = task_data["prompt"]    
     meta_data = task_data.get("meta_data", {})
@@ -167,12 +177,26 @@ def process_chat_model_request(task_data: dict):
     # Import the module dynamically
     module = get_python_code_module(python_code_module)
 
-    # Start the thread
-    thread = threading.Thread(
-        target=module.ask_chat_model,
-        args=(agent_name, prompt, meta_data),
-        daemon=True
-    )
+    if callback is not None:
+        # Create a wrapper function that calls the original ask_chat_model and then the callback
+        def ask_chat_model_with_callback(agent_name, prompt, meta_data):
+            # Store callback in meta_data temporarily for the chat model to use
+            meta_data["callback"] = callback
+            module.ask_chat_model(agent_name, prompt, meta_data)
+        
+        # Start the thread with the wrapper
+        thread = threading.Thread(
+            target=ask_chat_model_with_callback,
+            args=(agent_name, prompt, meta_data),
+            daemon=True
+        )
+    else:
+        # Start the thread normally
+        thread = threading.Thread(
+            target=module.ask_chat_model,
+            args=(agent_name, prompt, meta_data),
+            daemon=True
+        )
 
     thread.start()
     
