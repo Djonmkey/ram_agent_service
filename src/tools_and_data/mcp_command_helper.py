@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 from pathlib import Path
+from typing import Optional
 from importlib.util import spec_from_file_location, module_from_spec
 
 # Configure logging
@@ -18,7 +19,7 @@ if str(SRC_DIR) not in sys.path:
 
 from ras.agent_config_buffer import get_tools_and_data_mcp_commands_config, get_tools_and_data_mcp_commands_secrets
 
-def escape_system_text_with_command_escape_text(response: str, command_escape_text: str = "(in progress...)"):
+def escape_system_text_with_command_escape_text(agent_name, response: str, command_escape_text: str = "(in progress...)"):
     """
     Replaces any MCP command system text found in the response with a command escape text.
     
@@ -34,11 +35,30 @@ def escape_system_text_with_command_escape_text(response: str, command_escape_te
     # Strip leading/trailing whitespace for consistent behavior
     response = response.strip()
     
-    # Implementation of the TODO: Replace system_text with command_escape_text
-    # This is a placeholder implementation - in a real scenario, you would identify
-    # the commands from the configuration and replace them
+    command_data = get_tools_and_data_mcp_commands_config(agent_name)
     
-    return response.strip()
+    if not command_data:
+        logger.warning(f"No command data found for agent {agent_name}")
+        return command_escape_text
+
+    try:
+        # Check each command for aliases in the response
+        for cmd in command_data.get("mcp_commands", []):
+            if cmd.get("enabled") is False:
+                continue
+                
+            aliases = cmd.get("aliases", [])
+            for alias in aliases:
+                if alias in response:
+                    # Use the command's command_escape_text if available, otherwise use default
+                    escape_text = cmd.get("command_escape_text", command_escape_text)
+                    return escape_text
+                    
+        return response.strip()
+        
+    except Exception as e:
+        logger.error(f"Error during command escape processing: {e}", exc_info=True)
+        return response.strip()
 
 def contains_mcp_command(agent_name: str, message_text: str) -> bool:
     """
@@ -75,13 +95,24 @@ def contains_mcp_command(agent_name: str, message_text: str) -> bool:
         logger.error(f"Error during command checking: {e}", exc_info=True)
         return False
     
-def run_mcp_command(agent_name: str, command_text: str) -> str:
+def extract_model_parameters(agent_name, command_text, model_response):
+    command_only = extract_command(agent_name, command_text).strip()
+
+    if model_response.startswith(command_only):
+        return model_response[len(command_only):].strip()
+    elif command_only in model_response:
+        return model_response.split(command_only, 1)[1].strip()
+
+    return None
+
+def run_mcp_command(agent_name: str, command_text: str, model_response: str) -> str:
     """
     Executes an MCP command with the given text for the specified agent.
     
     Args:
-        agent_name: The name of the agent to run the command for.
-        command_text: The command text to execute.
+        agent_name: The name of the agent to run the command for. Example: calendar_concierge_discord
+        command_text: The command text to execute. Example: /create_event <json>
+        model_response. Example: /create_event {"summary":"Test Stand-up","description":"Temp","dt_start":"2025-05-21T07:00:00-04:00","duration":"PT15M","horizon":"week","source_agent":"manual_test"}
         
     Returns:
         The result of the command execution as a string.
@@ -137,6 +168,14 @@ def run_mcp_command(agent_name: str, command_text: str) -> str:
         cmd_mod = module_from_spec(spec)
         spec.loader.exec_module(cmd_mod)
 
+        # extract parameters from the model response
+        model_parameters = extract_model_parameters(agent_name, command_text, model_response)
+
+        if model_parameters:
+            matched_cmd["command_parameters"]["model_parameters"] = model_parameters
+
+        matched_cmd["command_parameters"]["agent_name"] = agent_name
+        
         if hasattr(cmd_mod, handler_name):
             handler = getattr(cmd_mod, handler_name)
             logger.info(f"Running MCP Command: {module_path}.{handler_name}")
@@ -150,6 +189,32 @@ def run_mcp_command(agent_name: str, command_text: str) -> str:
     except Exception as e:
         logger.error(f"Error executing MCP command '{command_text}': {e}", exc_info=True)
         return f"Error executing command {command_text}: {e}"
+
+def extract_command(agent_name, input_string: str) -> Optional[str]:
+    """
+    Extract the command from a command string.
+
+    A command is defined as the first word in the input, usually starting with a '/'.
+    If there are no spaces, the entire input is returned. Leading/trailing whitespace is trimmed.
+
+    :param input_string: The full command string including parameters.
+    :type input_string: str
+    :return: The extracted command portion of the string.
+    :rtype: Optional[str]
+    """
+
+    command_data = get_tools_and_data_mcp_commands_config(agent_name)
+
+    if "mcp_commands" in command_data:
+        for command in command_data["mcp_commands"]:
+            if "/" + command["command"] in input_string:
+                return "/" + command["command"]
+
+    stripped = input_string.strip()
+    if not stripped:
+        return None
+
+    return stripped.split(" ", 1)[0]
 
 def process_mcp_commands(agent_name: str, gpt_response: str, initial_prompt: str) -> str:
     """
@@ -184,13 +249,14 @@ def process_mcp_commands(agent_name: str, gpt_response: str, initial_prompt: str
     found_commands = False
 
     # Iterate through commands and execute if found in the response
-    temp_response = gpt_response # Work on a copy
+    command_only = extract_command(agent_name, gpt_response) # Work on a copy
     for command in all_commands:
         # Use case-insensitive check but execute with original case
-        if command.lower() in temp_response.lower():
+        # Note: The space is added to ensure a full command match.
+        if command_only.lower() + " " in command.lower() + " ":
             found_commands = True
             
-            command_result = run_mcp_command(agent_name, command)
+            command_result = run_mcp_command(agent_name, command, gpt_response)
             executed_results.append(f"--- Command: {command} ---\nResult:\n{command_result}\n--- End {command} ---")
             # Optional: Remove the command from temp_response to avoid re-matching parts?
             # This is complex if commands overlap. Simpler to just list results.

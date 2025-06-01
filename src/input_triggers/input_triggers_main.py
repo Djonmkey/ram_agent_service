@@ -67,10 +67,14 @@ def _resolve_path_relative_to_project_root(relative_path_str: str) -> str:
         TypeError: If relative_path_str is not a string.
     """
     if not isinstance(relative_path_str, str):
-        raise TypeError(f"Expected a string for relative_path_str, but got {type(relative_path_str)}")
+        return None
 
     # Ensure PROJECT_ROOT_PATH is a Path object
     project_root = pathlib.Path(PROJECT_ROOT_PATH)
+
+    if os.path.exists(relative_path_str):
+        # If the path already exists, return it as is
+        return str(pathlib.Path(relative_path_str).resolve())
 
     # Create a Path object from the relative string and resolve it
     # Use the / operator for joining paths, which is idiomatic for pathlib
@@ -210,8 +214,7 @@ async def _load_and_initialize_single_trigger(
 
     trigger_secrets_relative_path = trigger_info.get("input_trigger_secrets_file")
     if not trigger_secrets_relative_path or not isinstance(trigger_secrets_relative_path, str):
-        logger.warning(f"  Skipping {trigger_index_str} ('{module_path_str_original}') for agent '{agent_name}' due to missing or invalid 'input_trigger_secrets_file'.")
-        return False
+        logger.warning(f"  Warning {trigger_index_str} ('{module_path_str_original}') for agent '{agent_name}' due to missing 'input_trigger_secrets_file'.")
 
     # --- Resolve paths relative to project root using the helper ---
     try:
@@ -231,8 +234,6 @@ async def _load_and_initialize_single_trigger(
         return False # Error already logged by _load_json_file
 
     trigger_secrets_data = _load_json_file(trigger_secrets_absolute_path, f"{trigger_index_str} Secrets")
-    if trigger_secrets_data is None:
-        return False # Error already logged by _load_json_file
 
     # --- Import Module and Find Class ---
     logger.info(f"    Attempting to import trigger module: {module_path_for_import}")
@@ -266,7 +267,7 @@ async def _load_and_initialize_single_trigger(
             listener = input_trigger_class(
                 agent_config_data=agent_config_data, # Pass the whole agent config
                 trigger_config_data=trigger_config_data,
-                trigger_secrets=trigger_secrets_data.get("secrets", {})
+                trigger_secrets=(trigger_secrets_data or {}).get("secrets", {})
             )
 
             # Unique listener name for the global dictionary
@@ -403,13 +404,13 @@ async def stop_event_listeners():
             logger.error(f"ERROR: An unexpected error occurred during listener shutdown: {e}", exc_info=True)
 
 
-async def main(): # Manifest is now required
+async def main(mcp_client_manager): # Manifest is now required
     """
     Main entry point for the input triggers system.
     Loads, starts, and manages event listeners based on the agent manifest.
 
     Args:
-        agent_manifest_data: Dictionary containing agent manifest data.
+        mcp_client_manager: The MCPClientManager instance.
     """
     try:
         # Load listeners using the new manifest-driven logic

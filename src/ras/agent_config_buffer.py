@@ -18,14 +18,32 @@ logger = logging.getLogger(__name__)
 # Global storage for all agent configurations
 global_agent_manifest_entry = {}
 global_agent_config = {}
+
 global_tools_and_data_mcp_commands_config = {}
 global_tools_and_data_mcp_commands_secrets = {}
+
 global_chat_model_system_instructions = {}
 global_chat_model_config = {}
 global_chat_model_secrets = {}
+
 global_output_action_config = {}
 global_output_action_secrets = {}
 
+global_input_augmentation_config = {}
+
+# Input Augmentation
+def set_input_augmentation_config(agent_name: str, input_augmentation_config: Dict[str, Any]) -> None:
+    json_string = json.dumps(input_augmentation_config)
+    global_input_augmentation_config[agent_name] = json_string
+
+
+def get_input_augmentation_config(agent_name: str) -> Dict[str, Any]:
+    if agent_name in global_input_augmentation_config:
+        json_string = global_input_augmentation_config[agent_name]
+        return json.loads(json_string)
+    else:
+        logger.warning(f"No Input Augmentation config found for agent: {agent_name}")
+        return {}
 
 # Agent Manifest
 def set_agent_manifest_entry(agent_name: str, agent_manifest_entry: Dict[str, Any]) -> None:
@@ -104,8 +122,12 @@ def get_tools_and_data_mcp_commands_config(agent_name: str) -> Dict[str, Any]:
     Returns:
         Dictionary containing parsed MCP commands configuration
     """
-    json_string = global_tools_and_data_mcp_commands_config[agent_name]
-    return json.loads(json_string)
+    if agent_name in global_tools_and_data_mcp_commands_config:
+        json_string = global_tools_and_data_mcp_commands_config[agent_name]
+        return json.loads(json_string)
+    else:
+        logger.warning(f"No MCP commands config found for agent: {agent_name}")
+        return {}
 
 ## MCP Secrets
 def set_tools_and_data_mcp_commands_secrets(agent_name: str, tools_and_data_mcp_commands_secrets: Dict[str, Any]) -> None:
@@ -120,6 +142,43 @@ def set_tools_and_data_mcp_commands_secrets(agent_name: str, tools_and_data_mcp_
     global_tools_and_data_mcp_commands_secrets[agent_name] = json_string
 
 
+def get_tools_and_data_mcp_commands_secrets_by_module(agent_name: str, python_code_module: str) -> Dict[str, Any]:
+    """
+    Retrieve and parse MCP commands secrets specific to a Python module.
+    
+    This function extracts the 'common' secrets and combines them with module-specific 'internal_params'.
+    
+    Args:
+        agent_name: Name of the agent
+        python_code_module: Python module filename (e.g., 'apple_calendar.py')
+        
+    Returns:
+        Dictionary containing combined common and module-specific secrets
+    """
+    tools_and_data_mcp_commands_secrets = get_tools_and_data_mcp_commands_secrets(agent_name)
+    result = {}
+    
+    # Always include common elements if they exist
+    if 'common' in tools_and_data_mcp_commands_secrets:
+        result.update(tools_and_data_mcp_commands_secrets['common'])
+    
+    # Look for module-specific secrets
+    if 'secrets' in tools_and_data_mcp_commands_secrets:
+        # Extract filename from path if full path is provided
+        module_filename = os.path.basename(python_code_module)
+        
+        for secret in tools_and_data_mcp_commands_secrets['secrets']:
+            # Extract filename from the module path in the secrets configuration
+            secret_module = os.path.basename(secret.get('python_code_module', ''))
+            
+            # Check if either the full path or just the filename matches
+            if secret.get('python_code_module') == python_code_module or secret_module == module_filename:
+                if 'internal_params' in secret:
+                    result.update(secret['internal_params'])
+                break
+    
+    return result
+
 def get_tools_and_data_mcp_commands_secrets(agent_name: str) -> Dict[str, Any]:
     """
     Retrieve and parse MCP commands secrets
@@ -130,8 +189,12 @@ def get_tools_and_data_mcp_commands_secrets(agent_name: str) -> Dict[str, Any]:
     Returns:
         Dictionary containing parsed MCP commands secrets
     """
-    json_string = global_tools_and_data_mcp_commands_secrets[agent_name]
-    return json.loads(json_string)
+    if agent_name in global_tools_and_data_mcp_commands_secrets:
+        json_string = global_tools_and_data_mcp_commands_secrets[agent_name]
+        return json.loads(json_string)
+    else:
+        logger.warning(f"No MCP commands secrets found for agent: {agent_name}")
+        return {}
 
 # Chat Model
 ## Chat Model System Instructions
@@ -257,13 +320,16 @@ def load_json_file(file_path: str) -> Dict[str, Any]:
         FileNotFoundError: If file doesn't exist
         json.JSONDecodeError: If file contains invalid JSON
     """
+    file_path = Path(file_path)
+    if not file_path.exists():
+        error_msg = f"File not found: {file_path}"
+        logger.error(error_msg)
+        print(f"ERROR: {error_msg}")
+        raise FileNotFoundError(error_msg)
+    
     try:
-        file_path = Path(file_path)
         with open(file_path, 'r', encoding='utf-8') as file:
             return json.load(file)
-    except FileNotFoundError:
-        logger.error(f"File not found: {file_path}")
-        raise
     except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON in {file_path}: {e}")
         raise
@@ -285,13 +351,16 @@ def load_text_file(file_path: str) -> str:
     Raises:
         FileNotFoundError: If file doesn't exist
     """
+    file_path = Path(file_path)
+    if not file_path.exists():
+        error_msg = f"File not found: {file_path}"
+        logger.error(error_msg)
+        print(f"ERROR: {error_msg}")
+        raise FileNotFoundError(error_msg)
+    
     try:
-        file_path = Path(file_path)
         with open(file_path, 'r', encoding='utf-8') as file:
             return file.read()
-    except FileNotFoundError:
-        logger.error(f"File not found: {file_path}")
-        raise
     except Exception as e:
         logger.error(f"Error loading text file {file_path}: {str(e)}")
         raise
@@ -307,6 +376,9 @@ def resolve_path(base_path: Path, file_path: str) -> str:
         
     Returns:
         Resolved Path object
+        
+    Raises:
+        FileNotFoundError: If the resolved file doesn't exist
     """
     path = Path(file_path)
 
@@ -314,9 +386,18 @@ def resolve_path(base_path: Path, file_path: str) -> str:
         return str(path)
 
     if path.is_absolute():
-        return str(path)
+        resolved_path = path
+    else:
+        resolved_path = base_path / path
     
-    return str(base_path / path)
+    # Check if the resolved file exists
+    if not resolved_path.exists():
+        error_msg = f"File not found: {resolved_path}"
+        logger.error(error_msg)
+        print(f"ERROR: {error_msg}")
+        raise FileNotFoundError(error_msg)
+    
+    return str(resolved_path)
 
 
 def load_agent_manifest(manifest_path: str) -> None:
@@ -357,6 +438,7 @@ def load_agent_manifest(manifest_path: str) -> None:
                 if "mcp_commands_config_file" in tools_and_data:
                     config_path = resolve_path(base_path, tools_and_data["mcp_commands_config_file"])
                     mcp_commands_config = load_json_file(str(config_path))
+                    mcp_commands_config["mcp_client_python_code_module"] = agent.get("mcp_client_python_code_module", "")
                     set_tools_and_data_mcp_commands_config(agent_name, mcp_commands_config)
                     logger.info(f"Loaded MCP commands config for {agent_name}")
 
@@ -408,6 +490,8 @@ def load_agent_manifest(manifest_path: str) -> None:
                     logger.info(f"Loaded output action model secrets for {agent_name}")
         
         logger.info(f"Finished loading configuration for {enabled_count} enabled agent(s)")
+
+        return manifest
     
     except Exception as e:
         logger.error(f"Error loading agent manifest: {str(e)}")
