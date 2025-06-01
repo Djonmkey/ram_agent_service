@@ -138,8 +138,5 @@ if __name__ == "__main__":
          # Perform similar shutdown procedures on unexpected errors
          sys.exit(1) # Exit with error status
 
-    print("\nApplication finished.") # Add a final message
-    sys.exit(0) # Explicitly exit with success code
-
-    # --- UI Creation and mainloop Removed ---
-    # TODO: Start HTTP service for UI
+    print("\nApplication finished.")
+    sys.exit(0)
