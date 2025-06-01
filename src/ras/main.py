@@ -33,6 +33,64 @@ from ras.start_input_triggers import initialize_input_triggers # Use explicit re
 log_directory = os.path.join(os.path.dirname(__file__), 'logs')
 # current_conversations moved to start_input_triggers.py
 
+async def load_and_connect_mcp_clients(manifest_path: str) -> MCPClientManager:
+    """
+    Load MCP clients using the generic manager.
+    Each agent with mcp_client_python_code_module gets its own client.
+    """
+    mcp_client_manager = MCPClientManager()
+    
+    # Get enabled agents
+    enabled_agent_name_list = get_agent_name_list()
+    
+    # Load the manifest to get agent configurations
+    with open(manifest_path, 'r') as f:
+        agent_manifest = json.load(f)
+    
+    # Process each enabled agent
+    connection_tasks = []
+    
+    for agent_name in enabled_agent_name_list:
+        # Find the agent config in manifest
+        agent_config = None
+        for config in agent_manifest.get("agents", []):
+            if config.get('name') == agent_name and config.get('enabled', False):
+                agent_config = config
+                break
+        
+        if not agent_config:
+            continue
+        
+        # Check if agent has mcp_client_python_code_module
+        mcp_client_python_code_module = agent_config.get('mcp_client_python_code_module')
+        
+        if mcp_client_python_code_module:
+            print(f"\nProcessing MCP client for agent: {agent_name}")
+            # Create task to add client
+            connection_tasks.append(
+                mcp_client_manager.add_client(agent_name, mcp_client_python_code_module)
+            )
+    
+    # Connect all clients concurrently
+    if connection_tasks:
+        print(f"\nConnecting {len(connection_tasks)} MCP clients concurrently...")
+        results = await asyncio.gather(*connection_tasks, return_exceptions=True)
+        
+        # Log results
+        success_count = sum(1 for r in results if r is True)
+        print(f"\n✓ Successfully connected {success_count}/{len(connection_tasks)} MCP clients")
+    else:
+        print("\nNo agents with MCP clients found")
+    
+    # Print status summary
+    status_summary = mcp_client_manager.get_status_summary()
+    if status_summary:
+        print("\nMCP Client Status:")
+        for agent_name, status in status_summary.items():
+            print(f"  - {agent_name}: {'Connected' if status['connected'] else 'Failed'}")
+    
+    return mcp_client_manager
+
 if __name__ == "__main__":
     # --- Agent Manifest File Loading ---
     parser = argparse.ArgumentParser(description="Run the RAM Agent Service.")
@@ -95,6 +153,9 @@ if __name__ == "__main__":
         print(f"⚠️ Warning: Could not ensure base log directory {abs_log_directory}: {e}")
         # Continue execution, but logging might fail later
 
+    # Run the async client loading using the generic manager
+    mcp_client_manager = asyncio.run(load_and_connect_mcp_clients(manifest_path_absolute))
+
     # Start the Queue Manager
     start_all_queue_workers()
 
@@ -123,6 +184,18 @@ if __name__ == "__main__":
                 time.sleep(1)
     except KeyboardInterrupt:
         print("\nCtrl+C received. Shutting down...")
+
+        # Cleanup MCP client sessions using the generic manager
+        async def cleanup_mcp_clients():
+            """Clean up all MCP client connections"""
+            await mcp_client_manager.cleanup_all()
+        
+        # Run cleanup
+        try:
+            asyncio.run(cleanup_mcp_clients())
+            print("MCP client cleanup completed.")
+        except Exception as e:
+            print(f"Error during MCP client cleanup: {e}")
 
         # Signal event listeners to stop if they have a mechanism for it
         # (Currently, they run until completion or error - asyncio loop cancellation might be needed)
