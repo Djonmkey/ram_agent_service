@@ -190,7 +190,7 @@ class MCPClientManager:
         Returns:
             Response from the client or None if client not found
         """
-        module = self.get_client(agent_name)
+        module = self.get_client_modules(agent_name)  # Fixed: was get_client
         
         if not module:
             print(f"No MCP client found for agent '{agent_name}'")
