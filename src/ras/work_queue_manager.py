@@ -226,13 +226,12 @@ def process_input_trigger(task_data: dict, mcp_client_manager=None):
         if input_augmentation_config:
             prompt = augment_input_prompt(agent_name, prompt, meta_data)
         
-        # Here I want to retreive the appropraite mcp_client by agent_name
-        mcp_client = mcp_client_manager.get_client(agent_name)
-        if mcp_client:
+        # Check if the MCP client manager has a client for this agent
+        if mcp_client_manager and mcp_client_manager.has_client(agent_name):
             # Run the async process_query method in a thread
             def run_async_process_query():
                 try:
-                    asyncio.run(mcp_client.process_query(agent_name, prompt, meta_data))
+                    asyncio.run(mcp_client_manager.process_query(agent_name, prompt, meta_data))
                 except Exception as e:
                     print(f"Error in MCP client process_query: {e}")
             
@@ -246,7 +245,7 @@ def process_input_trigger(task_data: dict, mcp_client_manager=None):
             # Start the thread
             thread = threading.Thread(
                 target=process_chat_model_input_augmentation,
-                args=(agent_name, prompt, meta_data),
+                args=(task_data,),  # Fixed: pass task_data as a tuple
                 daemon=True
             )
 
