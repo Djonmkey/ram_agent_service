@@ -34,6 +34,64 @@ from ras.start_input_triggers import initialize_input_triggers  # Use explicit r
 log_directory = os.path.join(os.path.dirname(__file__), 'logs')
 # current_conversations moved to start_input_triggers.py
 
+async def load_and_connect_mcp_clients(manifest_path: str) -> MCPClientManager:
+    """
+    Load MCP clients using the generic manager.
+    Each agent with mcp_client_python_code_module gets its own client.
+    """
+    mcp_client_manager = MCPClientManager()
+    
+    # Get enabled agents
+    enabled_agent_name_list = get_agent_name_list()
+    
+    # Load the manifest to get agent configurations
+    with open(manifest_path, 'r') as f:
+        agent_manifest = json.load(f)
+    
+    # Process each enabled agent
+    connection_tasks = []
+    
+    for agent_name in enabled_agent_name_list:
+        # Find the agent config in manifest
+        agent_config = None
+        for config in agent_manifest.get("agents", []):
+            if config.get('name') == agent_name and config.get('enabled', False):
+                agent_config = config
+                break
+        
+        if not agent_config:
+            continue
+        
+        # Check if agent has mcp_client_python_code_module
+        mcp_client_python_code_module = agent_config.get('mcp_client_python_code_module')
+        
+        if mcp_client_python_code_module:
+            print(f"\nProcessing MCP client for agent: {agent_name}")
+            # Create task to add client
+            connection_tasks.append(
+                mcp_client_manager.add_client(agent_name, mcp_client_python_code_module)
+            )
+    
+    # Connect all clients concurrently
+    if connection_tasks:
+        print(f"\nConnecting {len(connection_tasks)} MCP clients concurrently...")
+        results = await asyncio.gather(*connection_tasks, return_exceptions=True)
+        
+        # Log results
+        success_count = sum(1 for r in results if r is True)
+        print(f"\n✓ Successfully connected {success_count}/{len(connection_tasks)} MCP clients")
+    else:
+        print("\nNo agents with MCP clients found")
+    
+    # Print status summary
+    status_summary = mcp_client_manager.get_status_summary()
+    if status_summary:
+        print("\nMCP Client Status:")
+        for agent_name, status in status_summary.items():
+            print(f"  - {agent_name}: {'Connected' if status['connected'] else 'Failed'}")
+    
+    return mcp_client_manager
+
 if __name__ == "__main__":
     # --- Agent Manifest File Loading ---
     parser = argparse.ArgumentParser(description="Run the RAM Agent Service.")
@@ -96,62 +154,8 @@ if __name__ == "__main__":
         print(f"⚠️ Warning: Could not ensure base log directory {abs_log_directory}: {e}")
         # Continue execution, but logging might fail later
 
-    async def load_and_connect_mcp_clients():
-        """Load MCP clients and establish their server connections"""
-        mcp_client_manager = MCPClientManager()
-        
-        # Assuming you have a way to get the agent configurations
-        enabled_agent_name_list = get_agent_name_list()  # Replace with your actual function
-
-        agent_manifest = load_agent_manifest(str(manifest_path_absolute))
-
-        for agent_name in enabled_agent_name_list:
-            for agent_config in agent_manifest["agents"]:
-                if agent_config.get('name') == agent_name:
-                    mcp_client_python_code_module = agent_config.get('mcp_client_python_code_module')
-
-                    if mcp_client_python_code_module:
-                        try:
-                            CLASS_NAME = "MCPClient"
-                            
-                            # Convert file path to module name
-                            # e.g., "src/mcp_clients/mcp_python_sdk_2025_03_26/client.py" -> "src.mcp_clients.mcp_python_sdk_2025_03_26.client"
-                            if mcp_client_python_code_module.endswith('.py'):
-                                module_name = mcp_client_python_code_module[:-3]  # Remove .py extension
-                            else:
-                                module_name = mcp_client_python_code_module
-                            
-                            # Replace path separators with dots
-                            module_name = module_name.replace('/', '.').replace('\\', '.')
-                            
-                            print(f"Loading MCP client module: {module_name} for agent: {agent_name}")
-                            module = __import__(module_name, fromlist=[CLASS_NAME])
-                            client_class = getattr(module, CLASS_NAME)
-
-                            # Check if the class has the required methods (duck typing)
-                            if hasattr(client_class, 'process_query') and callable(getattr(client_class, 'process_query')):
-                                # Create an instance of the MCPClient
-                                client = client_class()  # Pass any necessary arguments here
-                                
-                                # Connect to MCP servers to establish sessions
-                                if hasattr(client, 'connect_to_server') and callable(getattr(client, 'connect_to_server')):
-                                    print(f"Connecting to MCP servers for agent: {agent_name}")
-                                    await client.connect_to_server(agent_name)
-                                    print(f"MCP client connected successfully for agent: {agent_name}")
-                                else:
-                                    print(f"Warning: MCP client for {agent_name} does not have a 'connect_to_server' method")
-
-                                # Add the client to the manager
-                                mcp_client_manager.add_client(agent_name, client)
-                            else:
-                                print(f"Error: Class {CLASS_NAME} in module {mcp_client_python_code_module} does not have a 'process_query' method.")
-                        except Exception as e:
-                            print(f"Error loading MCP client for agent {agent_name}: {e}")
-        
-        return mcp_client_manager
-    
-    # Run the async client loading
-    mcp_client_manager = asyncio.run(load_and_connect_mcp_clients())
+    # Run the async client loading using the generic manager
+    mcp_client_manager = asyncio.run(load_and_connect_mcp_clients(manifest_path_absolute))
 
     # Start the Queue Manager
     start_all_queue_workers(mcp_client_manager)
@@ -182,16 +186,10 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\nCtrl+C received. Shutting down...")
 
-        # Cleanup MCP client sessions
+        # Cleanup MCP client sessions using the generic manager
         async def cleanup_mcp_clients():
             """Clean up all MCP client connections"""
-            for agent_name, client in mcp_client_manager.clients.items():
-                if hasattr(client, 'cleanup') and callable(getattr(client, 'cleanup')):
-                    try:
-                        print(f"Cleaning up MCP client for agent: {agent_name}")
-                        await client.cleanup()
-                    except Exception as e:
-                        print(f"Error cleaning up MCP client for {agent_name}: {e}")
+            await mcp_client_manager.cleanup_all()
         
         # Run cleanup
         try:
