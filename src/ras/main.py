@@ -25,8 +25,8 @@ if str(SRC_DIR) not in sys.path:
 # Now imports relative to src should work everywhere
 from ras.work_queue_manager import start_all_queue_workers
 from ras.agent_config_buffer import load_agent_manifest, get_agent_name_list
-from ras.start_tools_and_data import on_startup_dispatcher # Use explicit relative or absolute
-from ras.start_input_triggers import initialize_input_triggers # Use explicit relative or absolute
+from ras.start_tools_and_data import on_mcp_startup_dispatcher  # Use explicit relative or absolute
+from ras.start_input_triggers import initialize_input_triggers  # Use explicit relative or absolute
 
 # Global variables
 # Keep log_directory definition here as it's based on main.py's location
@@ -136,7 +136,7 @@ if __name__ == "__main__":
         # Pass the original manifest data to startup dispatcher, as it might need
         # info about all potential commands/secrets, not just enabled agents.
         # Adjust if startup dispatcher should only know about enabled agents.
-        on_startup_dispatcher()
+        on_mcp_startup_dispatcher()
         print("MCP startup dispatcher finished.")
     except Exception as e:
         print(f"❌ Error during MCP startup: {e}")
