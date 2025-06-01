@@ -74,12 +74,13 @@ if __name__ == "__main__":
     # --- End of Agent Manifest Loading ---
 
     print("\nExecuting MCP startup dispatcher...")
-    mcp_client_manager = None
+
+    mcp_client_manager = None 
+    
     try:
-        # Pass the original manifest data to startup dispatcher, as it might need
-        # info about all potential commands/secrets, not just enabled agents.
-        # Adjust if startup dispatcher should only know about enabled agents.
-        on_mcp_startup_dispatcher()
+        # The startup dispatcher now handles both MCP client connections and legacy startup commands
+        # It returns the initialized MCP client manager
+        mcp_client_manager = on_mcp_startup_dispatcher(manifest_path_absolute)
         print("MCP startup dispatcher finished.")
     except Exception as e:
         print(f"❌ Error during MCP startup: {e}")
