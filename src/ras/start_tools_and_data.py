@@ -98,7 +98,7 @@ def start_mcp_commands(command_data, secrets, agent_name: str):
         print(f"  ℹ️ No startup commands marked with 'run_on_start_up: true' found for agent '{agent_name}'.")
 
 
-def on_startup_dispatcher() -> None:
+def on_mcp_startup_dispatcher() -> None:
     """
     Dispatch startup routines for each enabled agent in the manifest by loading
     their configuration and initializing startup MCP commands.
