@@ -185,17 +185,37 @@ def process_input_trigger(task_data: dict):
     # Step 1: Execute Input Augmentation
     input_augmentation_config = get_input_augmentation_config(agent_name)
 
-    if input_augmentation_config:
-        # Start the thread
-        thread = threading.Thread(
-            target=process_chat_model_input_augmentation,
-            args=(agent_name, prompt, meta_data),
-            daemon=True
-        )
-
-        thread.start()
+    if mcp_client_python_code_module:
+        if input_augmentation_config:
+            prompt = augment_input_prompt(agent_name, prompt, meta_data)
+        
+        # Check if the MCP client manager has a client for this agent
+        if mcp_client_manager and mcp_client_manager.has_client(agent_name):
+            # Run the async process_query method in a thread
+            def run_async_process_query():
+                try:
+                    asyncio.run(mcp_client_manager.process_query(agent_name, prompt, meta_data))
+                except Exception as e:
+                    print(f"Error in MCP client process_query: {e}")
+            
+            thread = threading.Thread(target=run_async_process_query, daemon=True)
+            thread.start()
+        else:
+            print(f"No MCPClient found for agent: {agent_name}")
+    
     else:
-        process_chat_model_request(task_data)
+        if input_augmentation_config:
+            # Start the thread
+            thread = threading.Thread(
+                target=process_chat_model_input_augmentation,
+                args=(task_data,),  # Fixed: pass task_data as a tuple
+                daemon=True
+            )
+
+            thread.start()
+        else:
+            process_chat_model_request(task_data)
+
 
 def process_chat_model_response(task_data: dict):
     agent_name = task_data["agent_name"]
