@@ -5,7 +5,7 @@ from typing import Dict, Optional, List, Any
 from pathlib import Path
 import threading
 
-from src.ras.agent_config_buffer import get_tools_and_data_mcp_commands_config
+from ras.agent_config_buffer import get_tools_and_data_mcp_commands_config
 
 class MCPClientManager:
     """
