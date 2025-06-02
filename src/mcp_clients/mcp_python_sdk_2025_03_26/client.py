@@ -14,7 +14,7 @@ load_dotenv()  # load environment variables from .env
 
 from ras.agent_config_buffer import get_tools_and_data_mcp_commands_config
 from ras.work_queue_manager import process_chat_model_request
-from .single_server_client import SingleServerMCPClient
+from mcp_clients.mcp_python_sdk_2025_03_26.single_server_client import SingleServerMCPClient
 
 class MCPClient:
     """MCP Client that manages multiple SingleServerMCPClient instances"""
@@ -222,18 +222,46 @@ class MCPClient:
         self.agent_name = None
         print(f"✓ Cleaned up all MCP connections")
 
-async def main():
-    if len(sys.argv) < 2:
-        print("Usage: client.py <agent_name>")
-        sys.exit(1)
+async def main(agent_name: str = None) -> MCPClient:
+    """Main function for MCP Client Manager integration
+    
+    Args:
+        agent_name: Name of the agent to initialize client for
+        
+    Returns:
+        Initialized MCPClient instance
+    """
+    if agent_name is None:
+        if len(sys.argv) < 2:
+            print("Usage: client.py <agent_name>")
+            sys.exit(1)
+        agent_name = sys.argv[1]
         
     client = MCPClient()
+    await client.connect_to_server(agent_name)
+    return client
+
+async def process_query(agent_name: str, query: str, meta_data: Optional[Dict[str, Any]] = None) -> str:
+    """Global process_query function for MCP Client Manager integration
+    
+    This function is called by the MCP Client Manager.
+    We need to maintain a global client instance per agent.
+    """
+    # For now, create a new client each time
+    # In a production system, you might want to cache clients
+    client = MCPClient()
+    await client.connect_to_server(agent_name)
     try:
-        await client.connect_to_server(sys.argv[1])
-        await client.chat_loop()
+        return await client.process_query(agent_name, query, meta_data)
     finally:
         await client.cleanup()
 
 if __name__ == "__main__":
-    import sys
-    asyncio.run(main())
+    async def command_line_main():
+        client = await main()
+        try:
+            await client.chat_loop()
+        finally:
+            await client.cleanup()
+    
+    asyncio.run(command_line_main())
