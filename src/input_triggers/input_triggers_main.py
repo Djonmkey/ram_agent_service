@@ -404,13 +404,13 @@ async def stop_event_listeners():
             logger.error(f"ERROR: An unexpected error occurred during listener shutdown: {e}", exc_info=True)
 
 
-async def main(mcp_client_manager): # Manifest is now required
+async def main(): # Manifest is now required
     """
     Main entry point for the input triggers system.
     Loads, starts, and manages event listeners based on the agent manifest.
 
     Args:
-        mcp_client_manager: The MCPClientManager instance.
+        agent_manifest_data: Dictionary containing agent manifest data.
     """
     try:
         # Load listeners using the new manifest-driven logic

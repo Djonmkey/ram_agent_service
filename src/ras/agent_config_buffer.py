@@ -320,16 +320,13 @@ def load_json_file(file_path: str) -> Dict[str, Any]:
         FileNotFoundError: If file doesn't exist
         json.JSONDecodeError: If file contains invalid JSON
     """
-    file_path = Path(file_path)
-    if not file_path.exists():
-        error_msg = f"File not found: {file_path}"
-        logger.error(error_msg)
-        print(f"ERROR: {error_msg}")
-        raise FileNotFoundError(error_msg)
-    
     try:
+        file_path = Path(file_path)
         with open(file_path, 'r', encoding='utf-8') as file:
             return json.load(file)
+    except FileNotFoundError:
+        logger.error(f"File not found: {file_path}")
+        raise
     except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON in {file_path}: {e}")
         raise
@@ -351,16 +348,13 @@ def load_text_file(file_path: str) -> str:
     Raises:
         FileNotFoundError: If file doesn't exist
     """
-    file_path = Path(file_path)
-    if not file_path.exists():
-        error_msg = f"File not found: {file_path}"
-        logger.error(error_msg)
-        print(f"ERROR: {error_msg}")
-        raise FileNotFoundError(error_msg)
-    
     try:
+        file_path = Path(file_path)
         with open(file_path, 'r', encoding='utf-8') as file:
             return file.read()
+    except FileNotFoundError:
+        logger.error(f"File not found: {file_path}")
+        raise
     except Exception as e:
         logger.error(f"Error loading text file {file_path}: {str(e)}")
         raise
@@ -376,9 +370,6 @@ def resolve_path(base_path: Path, file_path: str) -> str:
         
     Returns:
         Resolved Path object
-        
-    Raises:
-        FileNotFoundError: If the resolved file doesn't exist
     """
     path = Path(file_path)
 
@@ -386,18 +377,9 @@ def resolve_path(base_path: Path, file_path: str) -> str:
         return str(path)
 
     if path.is_absolute():
-        resolved_path = path
-    else:
-        resolved_path = base_path / path
+        return str(path)
     
-    # Check if the resolved file exists
-    if not resolved_path.exists():
-        error_msg = f"File not found: {resolved_path}"
-        logger.error(error_msg)
-        print(f"ERROR: {error_msg}")
-        raise FileNotFoundError(error_msg)
-    
-    return str(resolved_path)
+    return str(base_path / path)
 
 
 def load_agent_manifest(manifest_path: str) -> None:
@@ -438,7 +420,6 @@ def load_agent_manifest(manifest_path: str) -> None:
                 if "mcp_commands_config_file" in tools_and_data:
                     config_path = resolve_path(base_path, tools_and_data["mcp_commands_config_file"])
                     mcp_commands_config = load_json_file(str(config_path))
-                    mcp_commands_config["mcp_client_python_code_module"] = agent.get("mcp_client_python_code_module", "")
                     set_tools_and_data_mcp_commands_config(agent_name, mcp_commands_config)
                     logger.info(f"Loaded MCP commands config for {agent_name}")
 
@@ -490,8 +471,6 @@ def load_agent_manifest(manifest_path: str) -> None:
                     logger.info(f"Loaded output action model secrets for {agent_name}")
         
         logger.info(f"Finished loading configuration for {enabled_count} enabled agent(s)")
-
-        return manifest
     
     except Exception as e:
         logger.error(f"Error loading agent manifest: {str(e)}")
