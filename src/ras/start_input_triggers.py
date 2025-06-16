@@ -269,13 +269,13 @@ def patch_gpt_handler(handler: 'GPTThreadHandler'):
 
 
 # --- MODIFIED: run_event_listeners function ---
-async def run_event_listeners(mcp_client_manager):
+async def run_event_listeners():
     """
     Runs the main input trigger logic (from input_triggers_main).
     Global patching is REMOVED from here.
 
     Args:
-        mcp_client_manager: The MCPClientManager instance.
+        agent_manifest_data: Dictionary containing filtered agent manifest data.
     """
     global log_directory
 
@@ -298,10 +298,10 @@ async def run_event_listeners(mcp_client_manager):
         # handler creation, patching (using the patch_gpt_handler above),
         # and listener setup.
         if asyncio.iscoroutinefunction(input_triggers_main):
-            await input_triggers_main(mcp_client_manager)
+            await input_triggers_main()
         else:
              print("Warning: input_triggers_main is not async. Running synchronously.")
-             input_triggers_main(mcp_client_manager)
+             input_triggers_main()
 
         print("Event listeners main function finished.")
     except Exception as e:
@@ -312,14 +312,14 @@ async def run_event_listeners(mcp_client_manager):
 
 # --- start_event_listeners_thread function (Conceptually Unchanged) ---
 # Starts the thread that runs run_event_listeners.
-def start_event_listeners_thread(mcp_client_manager):
+def start_event_listeners_thread():
     """Starts the event listeners in a separate thread."""
     print("Starting event listeners thread...")
     listener_loop = None
     try:
         listener_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(listener_loop)
-        listener_loop.run_until_complete(run_event_listeners(mcp_client_manager))
+        listener_loop.run_until_complete(run_event_listeners())
     except Exception as e:
         print(f"Error running asyncio event loop in thread: {e.__class__.__name__}: {e}")
         import traceback
@@ -356,13 +356,13 @@ def start_event_listeners_thread(mcp_client_manager):
 # --- initialize_input_triggers function (Conceptually Unchanged) ---
 # Sets the global log directory and starts the listener thread.
 # Added check to return None if no agents are enabled.
-def initialize_input_triggers(log_dir_abs_path: str, mcp_client_manager) -> Optional[threading.Thread]:
+def initialize_input_triggers(log_dir_abs_path: str) -> Optional[threading.Thread]:
     """
     Initializes and starts the event listeners in a background thread.
 
     Args:
+        agent_manifest_data: The loaded and filtered agent manifest data.
         log_dir_abs_path: The absolute path to the main log directory.
-        mcp_client_manager: The MCPClientManager instance.
 
     Returns:
         The started listener thread object, or None if no agents are enabled.
@@ -374,7 +374,6 @@ def initialize_input_triggers(log_dir_abs_path: str, mcp_client_manager) -> Opti
 
     listener_thread = threading.Thread(
         target=start_event_listeners_thread,
-        args=(mcp_client_manager,),
         daemon=True,
         name="EventListenerThread"
     )
