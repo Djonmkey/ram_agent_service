@@ -1,4 +1,4 @@
-# timely/list_future_tasks.py
+#!/usr/bin/env python3
 
 import asyncio
 import sys
@@ -16,17 +16,17 @@ logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('/tmp/read_file_mcp.log'),
+        logging.FileHandler('/tmp/write_file_mcp.log'),
         logging.StreamHandler(sys.stderr)
     ]
 )
-logger = logging.getLogger('read_file_server')
+logger = logging.getLogger('write_file_server')
 
-logger.info("Starting read_file.py MCP server...")
+logger.info("Starting write_file.py MCP server...")
 
 
-logger.info("Creating read-file-server instance...")
-server = Server("read-file-server")
+logger.info("Creating write-file-server instance...")
+server = Server("write-file-server")
 logger.info("Server instance created successfully")
 
 
@@ -39,22 +39,26 @@ async def handle_list_tools() -> list[Tool]:
     logger.info("Handling list_tools request")
     return [
         Tool(
-            name="read_file",
-            description="Read content from a file at the specified path",
+            name="write_file",
+            description="Write content to a file at the specified path",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "The file path to read from (can be absolute or relative)"
+                        "description": "The file path to write to (can be absolute or relative)"
                     },
-                    "encoding": {
-                        "type": "string",
-                        "description": "The text encoding to use when reading the file",
-                        "default": "utf-8"
+                    "content": {
+                        "type": "string", 
+                        "description": "The content to write to the file"
+                    },
+                    "create_directories": {
+                        "type": "boolean",
+                        "description": "Whether to create parent directories if they don't exist",
+                        "default": True
                     }
                 },
-                "required": ["file_path"]
+                "required": ["file_path", "content"]
             }
         )
     ]
@@ -66,34 +70,36 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
     Handle tool execution requests.
     """
     logger.info(f"Handling tool call: {name} with arguments: {arguments}")
-    if name == "read_file":
+    if name == "write_file":
         file_path = arguments.get("file_path")
-        encoding = arguments.get("encoding", "utf-8")
+        content = arguments.get("content")
+        create_directories = arguments.get("create_directories", True)
         
         if not file_path:
             return [TextContent(type="text", text="Error: file_path is required")]
+        
+        if content is None:
+            return [TextContent(type="text", text="Error: content is required")]
         
         try:
             # Convert to absolute path if relative
             if not os.path.isabs(file_path):
                 file_path = os.path.abspath(file_path)
             
-            # Check if file exists
-            if not os.path.exists(file_path):
-                return [TextContent(type="text", text=f"Error: File does not exist: {file_path}")]
+            # Create parent directories if requested
+            if create_directories:
+                directory = os.path.dirname(file_path)
+                if directory:
+                    os.makedirs(directory, exist_ok=True)
             
-            # Check if it's a file (not a directory)
-            if not os.path.isfile(file_path):
-                return [TextContent(type="text", text=f"Error: Path is not a file: {file_path}")]
+            # Write the file
+            with open(file_path, "w", encoding="utf-8") as file:
+                file.write(content)
             
-            # Read the file
-            with open(file_path, "r", encoding=encoding) as file:
-                content = file.read()
-            
-            return [TextContent(type="text", text=content)]
+            return [TextContent(type="text", text=f"Successfully wrote to file: {file_path}")]
             
         except Exception as e:
-            return [TextContent(type="text", text=f"Error reading file: {str(e)}")]
+            return [TextContent(type="text", text=f"Error writing file: {str(e)}")]
     
     else:
         return [TextContent(type="text", text=f"Unknown tool: {name}")]
@@ -116,7 +122,7 @@ async def main():
                     experimental_capabilities={},
                 ),
                 serverInfo=Implementation(
-                    name="read-file-server",
+                    name="write-file-server",
                     version="1.0.0"
                 ),
             ),
@@ -130,21 +136,37 @@ async def main():
 # Legacy support for the old execute_command interface
 def execute_command(command_parameters: dict[str, Any], internal_params: dict[str, Any]) -> str:
     """Legacy execute_command interface for backward compatibility"""
-    root_path = command_parameters.get("file_path")
-    filename = command_parameters.get("filename")
+    root_path = command_parameters.get("file_path", "")
+    model_parameters = command_parameters.get("model_parameters", "")
 
-    with open(filename, "r", encoding="utf-8") as file:
-        contents = file.read()
-
-    if root_path:
-        file_path_name = os.path.join(root_path, filename)
-    
+    # Parse the old format: <file_path> """<content>"""
     try:
-        with open(file_path_name, "r", encoding="utf-8") as file:
-            contents = file.read()
-        return contents
+        params = model_parameters.split('"""')
+        if len(params) >= 2:
+            filename = params[0].replace("'", "").strip()
+            contents = params[1].strip()
+        else:
+            # Fallback if the format is different
+            filename = model_parameters
+            contents = command_parameters.get("content", "")
+        
+        if root_path:
+            file_path = os.path.join(root_path, filename)
+        else:
+            file_path = filename
+        
+        # Ensure the directory exists
+        directory = os.path.dirname(file_path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+
+        with open(file_path, "w", encoding="utf-8") as file:
+            file.write(contents)
+        
+        return f"Successfully wrote to file: {file_path}"
+        
     except Exception as e:
-        return f"Error reading file: {str(e)}"
+        return f"Error writing file: {str(e)}"
 
 
 if __name__ == "__main__":
