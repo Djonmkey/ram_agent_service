@@ -5,6 +5,11 @@ RAM Agent Service (RAS) is an agentic platform developed by RAM Software for orc
 
 Follow these steps to set up your local development environment.
 
+## SSH
+ssh-add -D          # removes *all* identities from the current agent session
+ssh-add --apple-use-keychain ~/.ssh/id_ed25519
+ssh-add -l
+
 **Prerequisites:**
 
 *   **Python 3.12:** This project requires Python version 3.12.x. You can download it from [python.org](https://www.python.org/downloads/).

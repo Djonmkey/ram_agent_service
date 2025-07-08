@@ -1,0 +1,4 @@
+{
+    "python.defaultInterpreter": "${workspaceFolder}/.venv/bin/python",
+    "python.pythonPath": "${workspaceFolder}/.venv/bin/python"
+}

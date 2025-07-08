@@ -11,10 +11,9 @@
             "console": "integratedTerminal",
             // Change this line to use dot notation
             "module": "src.ras.main",
-            "justMyCode": false
-            // Optional: Add python path if VS Code doesn't automatically pick up .venv
-            // "python": "${workspaceFolder}/.venv/bin/python" // macOS/Linux
-            // "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe" // Windows
+            "justMyCode": false,
+            // Add python path to use the project's virtual environment
+            "python": "${workspaceFolder}/.venv/bin/python"
         }
     ]
 }
