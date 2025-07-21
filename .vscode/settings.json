@@ -1,4 +1,12 @@
 {
     "python.defaultInterpreter": "${workspaceFolder}/.venv/bin/python",
-    "python.pythonPath": "${workspaceFolder}/.venv/bin/python"
+    "python.pythonPath": "${workspaceFolder}/.venv/bin/python",
+    "files.exclude": {
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/.DS_Store": true,
+        "**/Thumbs.db": true,
+        ".mule": true
+    }
 }

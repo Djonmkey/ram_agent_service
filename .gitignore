@@ -183,3 +183,5 @@ logs/*
 src/tools_and_data/mcp-file-git-operations/package-lock.json
 src/tools_and_data/mcp-file-git-operations/package.json
 src/tools_and_data/mcp-file-git-operations/node_modules/*
+.github/copilot-instructions.md
+.vscode/settings.json
